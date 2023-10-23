@@ -2,6 +2,8 @@ import math, shutil, os, time, argparse, json, re, sys
 import numpy as np
 import scipy.io as sio
 from PIL import Image
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
 
 '''
@@ -29,14 +31,99 @@ Booktitle = {IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}
 parser = argparse.ArgumentParser(description='iTracker-pytorch-PrepareDataset.')
 parser.add_argument('--dataset_path', help="Path to extracted files. It should have folders called '%%05d' in it.")
 parser.add_argument('--output_path', default=None, help="Where to write the output. Can be the same as dataset_path if you wish (=default).")
+parser.add_argument("--threads", default=16, help="How many threads to use when loading data.")
 args = parser.parse_args()
 
+def load_metadata(meta, recording, sem):
+    recDir = os.path.join(args.dataset_path, recording)
+    recDirOut = os.path.join(args.output_path, recording)
+
+    # Read JSONs
+    appleFace = readJson(os.path.join(recDir, 'appleFace.json'))
+    if appleFace is None:
+        return
+    appleLeftEye = readJson(os.path.join(recDir, 'appleLeftEye.json'))
+    if appleLeftEye is None:
+        return
+    appleRightEye = readJson(os.path.join(recDir, 'appleRightEye.json'))
+    if appleRightEye is None:
+        return
+    dotInfo = readJson(os.path.join(recDir, 'dotInfo.json'))
+    if dotInfo is None:
+        return
+    faceGrid = readJson(os.path.join(recDir, 'faceGrid.json'))
+    if faceGrid is None:
+        return
+    frames = readJson(os.path.join(recDir, 'frames.json'))
+    if frames is None:
+        return
+    # info = readJson(os.path.join(recDir, 'info.json'))
+    # if info is None:
+    #     continue
+    # screen = readJson(os.path.join(recDir, 'screen.json'))
+    # if screen is None:
+    #     continue
+
+    facePath = preparePath(os.path.join(recDirOut, 'appleFace'))
+    leftEyePath = preparePath(os.path.join(recDirOut, 'appleLeftEye'))
+    rightEyePath = preparePath(os.path.join(recDirOut, 'appleRightEye'))
+
+    # Preprocess
+    allValid = np.logical_and(np.logical_and(appleFace['IsValid'], appleLeftEye['IsValid']),
+                              np.logical_and(appleRightEye['IsValid'], faceGrid['IsValid']))
+    if not np.any(allValid):
+        return
+
+    frames = np.array([int(re.match('(\d{5})\.jpg$', x).group(1)) for x in frames])
+
+    bboxFromJson = lambda data: np.stack((data['X'], data['Y'], data['W'], data['H']), axis=1).astype(int)
+    faceBbox = bboxFromJson(appleFace) + [-1, -1, 1, 1]  # for compatibility with matlab code
+    leftEyeBbox = bboxFromJson(appleLeftEye) + [0, -1, 0, 0]
+    rightEyeBbox = bboxFromJson(appleRightEye) + [0, -1, 0, 0]
+    leftEyeBbox[:, :2] += faceBbox[:, :2]  # relative to face
+    rightEyeBbox[:, :2] += faceBbox[:, :2]
+    faceGridBbox = bboxFromJson(faceGrid)
+
+    for j, frame in enumerate(frames):
+        # Can we use it?
+        if not allValid[j]:
+            continue
+
+        # Load image
+        imgFile = os.path.join(recDir, 'frames', '%05d.jpg' % frame)
+        if not os.path.isfile(imgFile):
+            logError('Warning: Could not read image file %s!' % imgFile)
+            continue
+        img = Image.open(imgFile)
+        if img is None:
+            logError('Warning: Could not read image file %s!' % imgFile)
+            continue
+        img = np.array(img.convert('RGB'))
+
+        # Crop images
+        imFace = cropImage(img, faceBbox[j, :])
+        imEyeL = cropImage(img, leftEyeBbox[j, :])
+        imEyeR = cropImage(img, rightEyeBbox[j, :])
+
+        # Save images
+        Image.fromarray(imFace).save(os.path.join(facePath, '%05d.jpg' % frame), quality=95)
+        Image.fromarray(imEyeL).save(os.path.join(leftEyePath, '%05d.jpg' % frame), quality=95)
+        Image.fromarray(imEyeR).save(os.path.join(rightEyePath, '%05d.jpg' % frame), quality=95)
+
+        # Collect metadata
+        sem.acquire()
+        meta['labelRecNum'] += [int(recording)]
+        meta['frameIndex'] += [frame]
+        meta['labelDotXCam'] += [dotInfo['XCam'][j]]
+        meta['labelDotYCam'] += [dotInfo['YCam'][j]]
+        meta['labelFaceGrid'] += [faceGridBbox[j, :]]
+        sem.release()
 
 
 def main():
     if args.output_path is None:
         args.output_path = args.dataset_path
-    
+
     if args.dataset_path is None or not os.path.isdir(args.dataset_path):
         raise RuntimeError('No such dataset folder %s!' % args.dataset_path)
 
@@ -57,91 +144,24 @@ def main():
         'labelFaceGrid': [],
     }
 
-    for i,recording in enumerate(recordings):
-        print('[%d/%d] Processing recording %s (%.2f%%)' % (i, len(recordings), recording, i / len(recordings) * 100))
-        recDir = os.path.join(args.dataset_path, recording)
-        recDirOut = os.path.join(args.output_path, recording)
+    futures = []
+    sem = threading.Semaphore()
+    with ThreadPoolExecutor(max_workers=args.threads) as executor:
+        for i, recording in enumerate(recordings):
+            print(
+                '[%d/%d] Submitted to process recording %s (%.2f%%)' % (i, len(recordings), recording, i / len(recordings) * 100))
+            result = executor.submit(load_metadata, meta, recording, sem)
+            futures.append((result, recording))
 
-        # Read JSONs
-        appleFace = readJson(os.path.join(recDir, 'appleFace.json'))
-        if appleFace is None:
-            continue
-        appleLeftEye = readJson(os.path.join(recDir, 'appleLeftEye.json'))
-        if appleLeftEye is None:
-            continue
-        appleRightEye = readJson(os.path.join(recDir, 'appleRightEye.json'))
-        if appleRightEye is None:
-            continue
-        dotInfo = readJson(os.path.join(recDir, 'dotInfo.json'))
-        if dotInfo is None:
-            continue
-        faceGrid = readJson(os.path.join(recDir, 'faceGrid.json'))
-        if faceGrid is None:
-            continue
-        frames = readJson(os.path.join(recDir, 'frames.json'))
-        if frames is None:
-            continue
-        # info = readJson(os.path.join(recDir, 'info.json'))
-        # if info is None:
-        #     continue
-        # screen = readJson(os.path.join(recDir, 'screen.json'))
-        # if screen is None:
-        #     continue
+        completed = 0
+        for proc_pair in futures:
+            proc_pair[0].result()
+            completed += 1
+            print(
+                '[%d/%d] Process %s finished. (%.2f%%)' % (
+                completed, len(recordings), proc_pair[1], completed / len(recordings) * 100)
+            )
 
-        facePath = preparePath(os.path.join(recDirOut, 'appleFace'))
-        leftEyePath = preparePath(os.path.join(recDirOut, 'appleLeftEye'))
-        rightEyePath = preparePath(os.path.join(recDirOut, 'appleRightEye'))
-
-        # Preprocess
-        allValid = np.logical_and(np.logical_and(appleFace['IsValid'], appleLeftEye['IsValid']), np.logical_and(appleRightEye['IsValid'], faceGrid['IsValid']))
-        if not np.any(allValid):
-            continue
-
-        frames = np.array([int(re.match('(\d{5})\.jpg$', x).group(1)) for x in frames])
-
-        bboxFromJson = lambda data: np.stack((data['X'], data['Y'], data['W'],data['H']), axis=1).astype(int)
-        faceBbox = bboxFromJson(appleFace) + [-1,-1,1,1] # for compatibility with matlab code
-        leftEyeBbox = bboxFromJson(appleLeftEye) + [0,-1,0,0]
-        rightEyeBbox = bboxFromJson(appleRightEye) + [0,-1,0,0]
-        leftEyeBbox[:,:2] += faceBbox[:,:2] # relative to face
-        rightEyeBbox[:,:2] += faceBbox[:,:2]
-        faceGridBbox = bboxFromJson(faceGrid)
-
-
-        for j,frame in enumerate(frames):
-            # Can we use it?
-            if not allValid[j]:
-                continue
-
-            # Load image
-            imgFile = os.path.join(recDir, 'frames', '%05d.jpg' % frame)
-            if not os.path.isfile(imgFile):
-                logError('Warning: Could not read image file %s!' % imgFile)
-                continue
-            img = Image.open(imgFile)        
-            if img is None:
-                logError('Warning: Could not read image file %s!' % imgFile)
-                continue
-            img = np.array(img.convert('RGB'))
-
-            # Crop images
-            imFace = cropImage(img, faceBbox[j,:])
-            imEyeL = cropImage(img, leftEyeBbox[j,:])
-            imEyeR = cropImage(img, rightEyeBbox[j,:])
-
-            # Save images
-            Image.fromarray(imFace).save(os.path.join(facePath, '%05d.jpg' % frame), quality=95)
-            Image.fromarray(imEyeL).save(os.path.join(leftEyePath, '%05d.jpg' % frame), quality=95)
-            Image.fromarray(imEyeR).save(os.path.join(rightEyePath, '%05d.jpg' % frame), quality=95)
-
-            # Collect metadata
-            meta['labelRecNum'] += [int(recording)]
-            meta['frameIndex'] += [frame]
-            meta['labelDotXCam'] += [dotInfo['XCam'][j]]
-            meta['labelDotYCam'] += [dotInfo['YCam'][j]]
-            meta['labelFaceGrid'] += [faceGridBbox[j,:]]
-
-    
     # Integrate
     meta['labelRecNum'] = np.stack(meta['labelRecNum'], axis = 0).astype(np.int16)
     meta['frameIndex'] = np.stack(meta['frameIndex'], axis = 0).astype(np.int32)
