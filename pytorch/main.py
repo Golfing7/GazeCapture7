@@ -111,9 +111,9 @@ def main():
         num_workers=workers, pin_memory=True)
 
 
-    criterion = nn.MSELoss().cuda()
+    criterion = nn.MSELoss().cuda() # Mean squared error loss function
 
-    optimizer = torch.optim.SGD(model.parameters(), lr,
+    optimizer = torch.optim.SGD(model.parameters(), lr, # Uses stochastic gradient descent
                                 momentum=momentum,
                                 weight_decay=weight_decay)
 

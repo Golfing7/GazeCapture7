@@ -1,3 +1,4 @@
+import cv2
 import torch.utils.data as data
 import scipy.io as sio
 from PIL import Image
@@ -6,6 +7,8 @@ import os.path
 import torchvision.transforms as transforms
 import torch
 import numpy as np
+import math
+import extractFrames
 import re
 
 '''
@@ -33,12 +36,12 @@ Booktitle = {IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}
 
 MEAN_PATH = './'
 
-def loadMetadata(filename, silent = False):
+def loadMetadata(filename, silent = False, struct_as_record = False):
     try:
         # http://stackoverflow.com/questions/6273634/access-array-contents-from-a-mat-file-loaded-using-scipy-io-loadmat-python
         if not silent:
             print('\tReading metadata from %s...' % filename)
-        metadata = sio.loadmat(filename, squeeze_me=True, struct_as_record=False)
+        metadata = sio.loadmat(filename, squeeze_me=True, struct_as_record=struct_as_record)
     except:
         print('\tFailed to read the meta file "%s"!' % filename)
         return None
@@ -60,6 +63,152 @@ class SubtractMean(object):
         """       
         return tensor.sub(self.meanImg)
 
+class TabletGazeData(data.Dataset):
+    def __init__(self, dataPath, split='all', imSize=(224, 224), gridSize=(25, 25)):
+        """
+        The tablet gaze dataset has extra metadata for each video...
+
+        The first, stored in gazePts.mat, stores the order and location of the dot appearance for ALL trials.
+        The second, stored in startTime.mat, stores the time (in seconds)? that the trial begins. (Discard all frames prior to this timestamp)
+
+        The trial was conducted with 35 dot positions. After the start time, every 3 seconds the dot changes positions.
+        """
+        self.data_path = dataPath
+        self.imSize = imSize
+        self.gridSize = gridSize
+
+        print('Loading TabletGaze dataset...')
+
+        self.gaze_pts = loadMetadata(os.path.join(dataPath, 'gazePts.mat'), struct_as_record=True)['gazePts'].tolist()
+        self.gaze_points_x = self.gaze_pts[2]
+        self.gaze_points_y = self.gaze_pts[3]
+        self.startTime = loadMetadata(os.path.join(dataPath, 'startTime.mat'), struct_as_record=True)['startTime'].tolist()
+
+        self.faceMean = loadMetadata(os.path.join(MEAN_PATH, 'mean_face_224.mat'))['image_mean']
+        self.eyeLeftMean = loadMetadata(os.path.join(MEAN_PATH, 'mean_left_224.mat'))['image_mean']
+        self.eyeRightMean = loadMetadata(os.path.join(MEAN_PATH, 'mean_right_224.mat'))['image_mean']
+
+        self.transformFace = transforms.Compose([
+            transforms.Resize(self.imSize),
+            transforms.ToTensor(),
+            SubtractMean(meanImg=self.faceMean),
+        ])
+        self.transformEyeL = transforms.Compose([
+            transforms.Resize(self.imSize),
+            transforms.ToTensor(),
+            SubtractMean(meanImg=self.eyeLeftMean),
+        ])
+        self.transformEyeR = transforms.Compose([
+            transforms.Resize(self.imSize),
+            transforms.ToTensor(),
+            SubtractMean(meanImg=self.eyeRightMean),
+        ])
+
+        self.subjects = 1
+        self.screenWidthCM = 22.62
+        self.screenHeightCM = 14.14
+
+        self.screenCenterXCM = self.screenWidthCM / 2
+        self.screenCenterYCM = self.screenHeightCM / 2
+
+        if split == 'train':
+            subject_split = range(0, math.floor(self.subjects * 0.8)) # Use 80% of the set for training
+        elif split == 'test':
+            subject_split = range(math.floor(self.subjects * 0.8), self.subjects) # Use 20% of the set for testing
+        else:
+            subject_split = range(0, self.subjects)
+
+        self.indices = []
+        for subject in subject_split:
+            for trial in range(0, 4):
+                for pose in range(0, 4):
+                    self.indices.append([subject + 1, trial + 1, pose + 1])
+
+
+    def makeGrid(self, params):
+        gridLen = self.gridSize[0] * self.gridSize[1]
+        grid = np.zeros([gridLen, ], np.float32)
+
+        indsY = np.array([i // self.gridSize[0] for i in range(gridLen)])
+        indsX = np.array([i % self.gridSize[0] for i in range(gridLen)])
+        condX = np.logical_and(indsX >= params[0], indsX < params[0] + params[2])
+        condY = np.logical_and(indsY >= params[1], indsY < params[1] + params[3])
+        cond = np.logical_and(condX, condY)
+
+        grid[cond] = 1
+        return grid
+
+    def get_dot_index(self, subject, trial, pose, current_time):
+        subject_set = self.startTime[subject]
+        time_start = subject_set[trial][pose]
+        # If the trial hasn't started yet, don't process it!
+        if current_time < time_start:
+            return -1
+
+        # There is a new dot every 3 seconds.
+        dot_index = math.floor((current_time - time_start) / 3)
+        return dot_index
+
+    def __getitem__(self, index):
+        """
+        Gets a batch of frames from the given video index.
+        """
+        subject, trial, pose = self.indices[index]
+        data_points = []
+        path_to_video = os.path.join(self.data_path, f'{subject}/{subject}_{trial}_{pose}.mp4')
+        frames = extractFrames.get_frames(path_to_video)
+        for frame, time in frames:
+            # Get the dot index and check if the trial hasn't started or has already finished.
+            dot_index = self.get_dot_index(subject - 1, trial - 1, pose - 1, time)
+            if dot_index < 0 or dot_index >= 35:
+                continue
+
+            topleft_dot_x_cm = self.gaze_points_x[dot_index]
+            topleft_dot_y_cm = self.gaze_points_y[dot_index]
+
+            # We need to transform the dot locations to be based from the center of the screen, which is what iTracker uses.
+            dot_x_cm = topleft_dot_x_cm - self.screenCenterXCM
+            dot_y_cm = -topleft_dot_y_cm
+
+            gaze = np.array([dot_x_cm, dot_y_cm], np.float32)
+
+            features = extractFrames.extract_image_features(frame)
+            faces = features[1]
+            # Skip the face if it wasn't detected!
+            if len(faces) == 0:
+                continue
+
+            eyes, faceGrid = features[2][0]
+            # No eyes detected? Skip!
+            # TODO In the future, maybe implement blink detection? The paper mentioned it, so it may be important.
+            if len(eyes) < 2:
+                continue
+
+            imFace = extractFrames.crop_to_bounds(frame, faces[0])
+            imEyeR = extractFrames.crop_to_bounds(frame, eyes[0])
+            imEyeL = extractFrames.crop_to_bounds(frame, eyes[1])
+
+            imFace = Image.fromarray(cv2.cvtColor(imFace, cv2.COLOR_BGR2RGB))
+            imEyeR = Image.fromarray(cv2.cvtColor(imEyeR, cv2.COLOR_BGR2RGB))
+            imEyeL = Image.fromarray(cv2.cvtColor(imEyeL, cv2.COLOR_BGR2RGB))
+
+            imFace = self.transformFace(imFace)
+            imEyeR = self.transformEyeR(imEyeR)
+            imEyeL = self.transformEyeL(imEyeL)
+
+            faceGrid = self.makeGrid(faceGrid)
+
+            # to tensor
+            row = torch.LongTensor([int(index)])
+            faceGrid = torch.FloatTensor(faceGrid)
+            data_points.append([row, imFace, imEyeL, imEyeR, faceGrid, gaze])
+
+        print('Loaded %s data frames from %s %s %s' % (len(data_points), subject, trial, pose))
+        return data_points
+
+
+    def __len__(self):
+        return len(self.indices)
 
 class ITrackerData(data.Dataset):
     def __init__(self, dataPath, split = 'train', imSize=(224,224), gridSize=(25, 25)):
@@ -158,5 +307,87 @@ class ITrackerData(data.Dataset):
         return row, imFace, imEyeL, imEyeR, faceGrid, gaze
     
         
+    def __len__(self):
+        return len(self.indices)
+
+
+class ITrackerImageData(data.Dataset):
+    def __init__(self, image, imSize=(224, 224), gridSize=(25, 25)):
+        self.imSize = imSize
+        self.gridSize = gridSize
+
+        # metaFile = 'metadata.mat'
+        self.faceMean = loadMetadata(os.path.join(MEAN_PATH, 'mean_face_224.mat'))['image_mean']
+        self.eyeLeftMean = loadMetadata(os.path.join(MEAN_PATH, 'mean_left_224.mat'))['image_mean']
+        self.eyeRightMean = loadMetadata(os.path.join(MEAN_PATH, 'mean_right_224.mat'))['image_mean']
+
+        self.transformFace = transforms.Compose([
+            transforms.Resize(self.imSize),
+            transforms.ToTensor(),
+            SubtractMean(meanImg=self.faceMean),
+        ])
+        self.transformEyeL = transforms.Compose([
+            transforms.Resize(self.imSize),
+            transforms.ToTensor(),
+            SubtractMean(meanImg=self.eyeLeftMean),
+        ])
+        self.transformEyeR = transforms.Compose([
+            transforms.Resize(self.imSize),
+            transforms.ToTensor(),
+            SubtractMean(meanImg=self.eyeRightMean),
+        ])
+
+        self.indices = [image]
+        print('Loaded iTracker dataset split with %d records...' % (len(self.indices)))
+
+    def loadImage(self, path):
+        try:
+            im = Image.open(path).convert('RGB')
+        except OSError:
+            raise RuntimeError('Could not read image: ' + path)
+            # im = Image.new("RGB", self.imSize, "white")
+
+        return im
+
+    def makeGrid(self, params):
+        gridLen = self.gridSize[0] * self.gridSize[1]
+        grid = np.zeros([gridLen, ], np.float32)
+
+        indsY = np.array([i // self.gridSize[0] for i in range(gridLen)])
+        indsX = np.array([i % self.gridSize[0] for i in range(gridLen)])
+        condX = np.logical_and(indsX >= params[0], indsX < params[0] + params[2])
+        condY = np.logical_and(indsY >= params[1], indsY < params[1] + params[3])
+        cond = np.logical_and(condX, condY)
+
+        grid[cond] = 1
+        return grid
+
+    def __getitem__(self, index):
+        image = self.indices[index]
+        features = extractFrames.extract_image_features(image)
+
+        faces = features[1]
+        eyes, faceGrid = features[2][0]
+
+        imFace = extractFrames.crop_to_bounds(image, faces[0])
+        imEyeL = extractFrames.crop_to_bounds(image, eyes[0])
+        imEyeR = extractFrames.crop_to_bounds(image, eyes[1])
+
+        imFace = Image.fromarray(cv2.cvtColor(imFace, cv2.COLOR_BGR2RGB))
+        imEyeL = Image.fromarray(cv2.cvtColor(imEyeL, cv2.COLOR_BGR2RGB))
+        imEyeR = Image.fromarray(cv2.cvtColor(imEyeR, cv2.COLOR_BGR2RGB))
+
+        imFace = self.transformFace(imFace)
+        imEyeL = self.transformEyeL(imEyeL)
+        imEyeR = self.transformEyeR(imEyeR)
+
+        faceGrid = self.makeGrid(faceGrid)
+
+        # to tensor
+        row = torch.LongTensor([int(index)])
+        faceGrid = torch.FloatTensor(faceGrid)
+
+        return row, imFace, imEyeL, imEyeR, faceGrid
+
     def __len__(self):
         return len(self.indices)
