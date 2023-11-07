@@ -9,6 +9,7 @@ import cv2
 import time
 import os
 import scipy.io as sio
+from decord import VideoReader
 
 # print(os.environ['OPENCV_DATA'])
 
@@ -142,11 +143,24 @@ def get_frames(video_file):
     Parses all frames out of the given video file and returns an array of PIL images.
     """
 
+    vr = VideoReader(video_file)
+
+    timestamps = vr.get_frame_timestamp(range(len(vr)))
+    timestamps = (timestamps[:, 0] * 1000).round().astype(int).tolist()
+
+    to_return = []
+    for i in range(len(vr)):
+        to_return.append([cv2.cvtColor(vr.next().asnumpy(), cv2.COLOR_RGB2BGR), timestamps[i]])
+
+    return to_return
+
+def get_frames_old(video_file):
     video = cv2.VideoCapture(video_file)
+    frame_rate = video.get(cv2.CAP_PROP_FPS)
+    frames = video.get(cv2.CAP_PROP_FRAME_COUNT)
     success, image = video.read()
     read_frames = []
     frames_read = 0
-    frame_rate = video.get(cv2.CAP_PROP_FPS)
     while success:
         frame_time = frames_read / frame_rate
         read_frames.append([image, frame_time])
@@ -164,7 +178,8 @@ if __name__ == '__main__':
     for data_pt in data['gazePts'].tolist():
         print(data_pt)
 
-    frames = get_frames("../data/51_4_4.mp4")
+    frames = get_frames("../data/tablet/1/1_1_1.mp4")
+    framesO = get_frames_old("../data/tablet/1/1_1_1.mp4")
     count = 0
     # for frame, f_time in frames:
     #     data = extract_image_features(frame)

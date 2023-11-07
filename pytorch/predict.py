@@ -58,11 +58,11 @@ def run_tabletgaze_generalization():
     if pytorch_model is None:
         pytorch_model = load_model()
 
-    data_set = TabletGazeData(dataPath="/Users/andrewbowie/PycharmProjects/GazeCapture/data/tablet/")
+    data_set = TabletGazeData(dataPath="../data/tablet/")
     test_loader = torch.utils.data.DataLoader(
         data_set,
         batch_size=1, shuffle=False,
-        num_workers=2, pin_memory=True)
+        num_workers=1, pin_memory=True)
 
     losses = AverageMeter()
     lossesLin = AverageMeter()
@@ -70,7 +70,7 @@ def run_tabletgaze_generalization():
     criterion = nn.MSELoss().cuda() # Mean squared error loss function
     for i, (frame_group) in enumerate(test_loader):
         for frame_data in frame_group:
-            row, imFace, imEyeL, imEyeR, faceGrid, gaze = frame_data
+            row, imFace, imEyeL, imEyeR, faceGrid, gaze, index, frame_time = frame_data
 
             expected_x = gaze[0][0]
             expected_y = gaze[0][1]
@@ -96,8 +96,10 @@ def run_tabletgaze_generalization():
             print('Epoch (val): [{0}][{1}/{2}]\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
                   'Expected {expected_x:.4f}[{output_x}] ({expected_y}[{output_y}])\t'
+                  'Frame Data {gaze_index:.4f} {frame_time:.4f}\t'
                   'Error L2 {lossLin.val:.4f} ({lossLin.avg:.4f})\t'.format(
                 1, i, len(test_loader),
+                gaze_index=index[0], frame_time=frame_time[0],
                 expected_x=expected_x, expected_y=expected_y, output_x=output[0][1], output_y=output[0][1], loss=losses, lossLin=lossesLin))
 
 
@@ -122,4 +124,5 @@ def load_model(filename="checkpoint.pth.tar"):
     return model
 
 if __name__ == '__main__':
+    print('Test {test_thing:.4f}'.format(test_thing=1))
     run_tabletgaze_generalization()

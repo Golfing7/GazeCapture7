@@ -155,11 +155,21 @@ class TabletGazeData(data.Dataset):
         """
         subject, trial, pose = self.indices[index]
         data_points = []
-        path_to_video = os.path.join(self.data_path, f'{subject}/{subject}_{trial}_{pose}.mp4')
+        video_name = f'{subject}/{subject}_{trial}_{pose}.mp4'
+        path_to_video = os.path.join(self.data_path, video_name)
+        print('Loading frames for %s' % path_to_video)
         frames = extractFrames.get_frames(path_to_video)
-        for frame, time in frames:
+        print('Loaded %s frames for %s' % (len(frames), path_to_video))
+        num = 0
+        for frame, frame_time in frames:
+            num += 1
+            if num % 100 == 0:
+                print('Loading frame %s for video file %s' % (num, path_to_video))
+
+            # Frame time is normally stored in MS. We need seconds.
+            frame_time = frame_time / 1000
             # Get the dot index and check if the trial hasn't started or has already finished.
-            dot_index = self.get_dot_index(subject - 1, trial - 1, pose - 1, time)
+            dot_index = self.get_dot_index(subject - 1, trial - 1, pose - 1, frame_time)
             if dot_index < 0 or dot_index >= 35:
                 continue
 
@@ -201,7 +211,7 @@ class TabletGazeData(data.Dataset):
             # to tensor
             row = torch.LongTensor([int(index)])
             faceGrid = torch.FloatTensor(faceGrid)
-            data_points.append([row, imFace, imEyeL, imEyeR, faceGrid, gaze])
+            data_points.append([row, imFace, imEyeL, imEyeR, faceGrid, gaze, dot_index, frame_time])
 
         print('Loaded %s data frames from %s %s %s' % (len(data_points), subject, trial, pose))
         return data_points
