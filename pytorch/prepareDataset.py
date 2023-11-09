@@ -89,14 +89,14 @@ def load_metadata(meta, recording, sem):
         if not allValid[j]:
             continue
 
-        # Load image
+        # Load images
         imgFile = os.path.join(recDir, 'frames', '%05d.jpg' % frame)
         if not os.path.isfile(imgFile):
-            logError('Warning: Could not read image file %s!' % imgFile)
+            logError('Warning: Could not read images file %s!' % imgFile)
             continue
         img = Image.open(imgFile)
         if img is None:
-            logError('Warning: Could not read image file %s!' % imgFile)
+            logError('Warning: Could not read images file %s!' % imgFile)
             continue
         img = np.array(img.convert('RGB'))
 

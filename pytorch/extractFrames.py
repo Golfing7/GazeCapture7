@@ -28,7 +28,7 @@ eye_r_cascade = cv2.CascadeClassifier(cascades_path + 'haarcascade_righteye_2spl
 # - frameW/H: The frame in which the detections exist
 # - gridW/H: The size of the grid (typically same aspect ratio as the
 #     frame, but much smaller)
-# - labelFaceX/Y/W/H: The face detection (x and y are 0-based image
+# - labelFaceX/Y/W/H: The face detection (x and y are 0-based images
 #     coordinates)
 # - parameterized: Whether to actually output the grid or just the
 #     [x y w h] of the 1s square within the gridW x gridH grid.
@@ -45,7 +45,7 @@ def faceGridFromFaceRect(frameW, frameH, gridW, gridH, labelFaceX, labelFaceY, l
 
     grid = np.zeros((gridH, gridW))
 
-    # Use one-based image coordinates.
+    # Use one-based images coordinates.
     xLo = round(labelFaceX * scaleX)
     yLo = round(labelFaceY * scaleY)
     w = round(labelFaceW * scaleX)
@@ -154,37 +154,14 @@ def get_frames(video_file):
 
     return to_return
 
-def get_frames_old(video_file):
-    video = cv2.VideoCapture(video_file)
-    frame_rate = video.get(cv2.CAP_PROP_FPS)
-    frames = video.get(cv2.CAP_PROP_FRAME_COUNT)
-    success, image = video.read()
-    read_frames = []
-    frames_read = 0
-    while success:
-        frame_time = frames_read / frame_rate
-        read_frames.append([image, frame_time])
-        success, image = video.read()
-        frames_read += 1
-    return read_frames
-
-import predict
-
 if __name__ == '__main__':
 
-    data = sio.loadmat('gazePts.mat', squeeze_me=True, struct_as_record=True)
-    start_time = sio.loadmat('startTime.mat', squeeze_me=True, struct_as_record=True)
-    print(start_time['startTime'])
-    for data_pt in data['gazePts'].tolist():
-        print(data_pt)
+    # data = sio.loadmat('gazePts.mat', squeeze_me=True, struct_as_record=True)
+    # start_time = sio.loadmat('startTime.mat', squeeze_me=True, struct_as_record=True)
+    # print(start_time['startTime'])
+    # for data_pt in data['gazePts'].tolist():
+    #     print(data_pt)
 
     frames = get_frames("../data/tablet/1/1_1_1.mp4")
-    framesO = get_frames_old("../data/tablet/1/1_1_1.mp4")
-    count = 0
-    # for frame, f_time in frames:
-    #     data = extract_image_features(frame)
-    #     if len(data[1]) > 0 and len(data[2][0]) >= 2:
-    #         draw_detected_features(frame, data[1], data[2])
-    #         cv2.imwrite(f'out{count}.jpg', frame)
-    #         print('wrote')
-    #         count += 1
+    for frame in frames:
+        extract_image_features(frame)

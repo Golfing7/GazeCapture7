@@ -48,7 +48,7 @@ def loadMetadata(filename, silent = False, struct_as_record = False):
     return metadata
 
 class SubtractMean(object):
-    """Normalize an tensor image with mean.
+    """Normalize an tensor images with mean.
     """
 
     def __init__(self, meanImg):
@@ -57,9 +57,9 @@ class SubtractMean(object):
     def __call__(self, tensor):
         """
         Args:
-            tensor (Tensor): Tensor image of size (C, H, W) to be normalized.
+            tensor (Tensor): Tensor images of size (C, H, W) to be normalized.
         Returns:
-            Tensor: Normalized image.
+            Tensor: Normalized images.
         """       
         return tensor.sub(self.meanImg)
 
@@ -271,7 +271,7 @@ class ITrackerData(data.Dataset):
         try:
             im = Image.open(path).convert('RGB')
         except OSError:
-            raise RuntimeError('Could not read image: ' + path)
+            raise RuntimeError('Could not read images: ' + path)
             #im = Image.new("RGB", self.imSize, "white")
 
         return im
@@ -354,7 +354,7 @@ class ITrackerImageData(data.Dataset):
         try:
             im = Image.open(path).convert('RGB')
         except OSError:
-            raise RuntimeError('Could not read image: ' + path)
+            raise RuntimeError('Could not read images: ' + path)
             # im = Image.new("RGB", self.imSize, "white")
 
         return im
