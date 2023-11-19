@@ -96,7 +96,6 @@ def get_face_grid(face, frameW, frameH, gridSize):
     return faceGridFromFaceRect(frameW, frameH, gridSize, gridSize, faceX, faceY, faceW, faceH, True)
 
 def extract_image_features(img):
-    start_ms = (time.time_ns() / 1000000)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     face_detections = face_cascade.detectMultiScale(gray, 1.3, 5)
 
@@ -165,7 +164,9 @@ if __name__ == '__main__':
     read_in = cv2.imread('out_0.jpg')
     features = extract_image_features(read_in)
     print(features[1])
-    print(features[2])
+    print(features[2][0][0])
+    draw_detected_features(*features)
+    cv2.imwrite('output.jpg', features[0])
     # frames = get_frames("../data/tablet/1/1_1_1.mp4")
     # for i in range(5):
     #     cv2.imwrite(f'out_{i}.jpg', frames[i][0])

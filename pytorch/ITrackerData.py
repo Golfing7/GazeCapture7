@@ -8,7 +8,7 @@ import torchvision.transforms as transforms
 import torch
 import numpy as np
 import math
-import extractFrames
+import extractFrames, recognize_face
 import re
 
 '''
@@ -182,7 +182,7 @@ class TabletGazeData(data.Dataset):
 
             gaze = np.array([dot_x_cm, dot_y_cm], np.float32)
 
-            features = extractFrames.extract_image_features(frame)
+            features = recognize_face.insight_extract(frame)
             faces = features[1]
             # Skip the face if it wasn't detected!
             if len(faces) == 0:
