@@ -13,6 +13,7 @@ def extract_faces(img_file):
     faces = app.get(img)
 
     face_bbx = []
+    eyes = []
     for i in range(len(faces)):
         face = faces[i]
         box = face.bbox.astype(int)
@@ -22,9 +23,10 @@ def extract_faces(img_file):
             # print(landmark.shape)
             rEye = kps[0]
             lEye = kps[1]
+            eyes.append([rEye, lEye])
 
 
-    return face_bbx
+    return face_bbx, eyes
 
 def draw_on(img, faces):
         import cv2
@@ -60,10 +62,6 @@ def draw_on(img, faces):
         return dimg
 
 if __name__ == '__main__':
-    face_bbx = extract_faces('test.jpg')
-    loaded = ins_get_image('t1')
-    faces = app.get(loaded)
-    rimg = draw_on(loaded, faces)
-    cv2.imwrite("./t1_output.jpg", rimg)
+    face_bbx, eyes = extract_faces('out_0.jpg')
 
-    print(face_bbx)
+    print(face_bbx, eyes)

@@ -9,7 +9,8 @@ import cv2
 import time
 import os
 import scipy.io as sio
-from decord import VideoReader
+import insightface
+import av
 
 # print(os.environ['OPENCV_DATA'])
 
@@ -143,14 +144,13 @@ def get_frames(video_file):
     Parses all frames out of the given video file and returns an array of PIL images.
     """
 
-    vr = VideoReader(video_file)
-
-    timestamps = vr.get_frame_timestamp(range(len(vr)))
-    timestamps = (timestamps[:, 0] * 1000).round().astype(int).tolist()
+    container = av.open(video_file)
+    video = container.streams.video[0]
 
     to_return = []
-    for i in range(len(vr)):
-        to_return.append([cv2.cvtColor(vr.next().asnumpy(), cv2.COLOR_RGB2BGR), timestamps[i]])
+    for idx, frame in enumerate(container.decode(video)):
+        to_return.append([cv2.cvtColor(frame.to_rgb().to_ndarray(), cv2.COLOR_RGB2BGR), int(frame.pts * video.time_base * 1000)])
+    container.close()
 
     return to_return
 
@@ -162,6 +162,15 @@ if __name__ == '__main__':
     # for data_pt in data['gazePts'].tolist():
     #     print(data_pt)
 
-    frames = get_frames("../data/tablet/1/1_1_1.mp4")
-    for frame in frames:
-        extract_image_features(frame)
+    read_in = cv2.imread('out_0.jpg')
+    features = extract_image_features(read_in)
+    print(features[1])
+    print(features[2])
+    # frames = get_frames("../data/tablet/1/1_1_1.mp4")
+    # for i in range(5):
+    #     cv2.imwrite(f'out_{i}.jpg', frames[i][0])
+    #     features = extract_image_features(frames[i][0])
+    #     draw_detected_features(*features)
+    #     cv2.imwrite(f'out_f{i}.jpg', frames[i][0])
+    # for frame in frames:
+    #     extract_image_features(frame)

@@ -117,6 +117,8 @@ def load_model(filename="checkpoint.pth.tar"):
     # model.cuda()
 
     state = saved['state_dict']
+    print(saved['best_prec1'])
+    print(saved['epoch'])
     try:
         model.module.load_state_dict(state)
     except:
