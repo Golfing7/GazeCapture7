@@ -1,6 +1,4 @@
-import math, shutil, os, time, argparse
-import numpy as np
-import scipy.io as sio
+import shutil, os, time, argparse
 
 import torch
 import torch.nn as nn
@@ -8,11 +6,8 @@ import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-import torchvision.models as models
 
-from ITrackerData import ITrackerData
+from ITrackerData import TabletGazeData
 from ITrackerModel import ITrackerModel
 
 '''
@@ -55,9 +50,11 @@ args = parser.parse_args()
 doLoad = not args.reset # Load checkpoint at the beginning
 doTest = args.sink # Only run test, no training
 
-workers = 16
+device = 'cpu'
+cpu_workers = 2
+cuda_workers = 16
 epochs = 25
-batch_size = torch.cuda.device_count()*100 # Change if out of cuda memory
+batch_size = 64 if device == 'cpu' else torch.cuda.device_count()*100 # Change if out of cuda memory
 
 base_lr = 0.0001
 momentum = 0.9
@@ -71,13 +68,12 @@ count_test = 0
 count = 0
 
 
-
 def main():
     global args, best_prec1, weight_decay, momentum
 
     model = ITrackerModel()
     model = torch.nn.DataParallel(model)
-    model.cuda()
+    model.to(torch.device(device))
     imSize=(224,224)
     cudnn.benchmark = True   
 
@@ -96,22 +92,20 @@ def main():
         else:
             print('Warning: Could not read checkpoint!')
 
-    
-    dataTrain = ITrackerData(dataPath = args.data_path, split='train', imSize = imSize)
-    dataVal = ITrackerData(dataPath = args.data_path, split='test', imSize = imSize)
+    dataTrain = TabletGazeData(dataPath = args.data_path, split='train', imSize = imSize)
+    dataVal = TabletGazeData(dataPath = args.data_path, split='test', imSize = imSize)
    
     train_loader = torch.utils.data.DataLoader(
         dataTrain,
         batch_size=batch_size, shuffle=True,
-        num_workers=workers, pin_memory=True)
+        num_workers=cpu_workers if device == 'cpu' else cuda_workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
         dataVal,
         batch_size=batch_size, shuffle=False,
-        num_workers=workers, pin_memory=True)
+        num_workers=cpu_workers if device == 'cpu' else cuda_workers, pin_memory=True)
 
-
-    criterion = nn.MSELoss().cuda() # Mean squared error loss function
+    criterion = nn.MSELoss().to(torch.device(device)) # Mean squared error loss function
 
     optimizer = torch.optim.SGD(model.parameters(), lr, # Uses stochastic gradient descent
                                 momentum=momentum,
@@ -156,14 +150,13 @@ def train(train_loader, model, criterion,optimizer, epoch):
     end = time.time()
 
     for i, (row, imFace, imEyeL, imEyeR, faceGrid, gaze) in enumerate(train_loader):
-        
         # measure data loading time
         data_time.update(time.time() - end)
-        imFace = imFace.cuda()
-        imEyeL = imEyeL.cuda()
-        imEyeR = imEyeR.cuda()
-        faceGrid = faceGrid.cuda()
-        gaze = gaze.cuda()
+        imFace = imFace.to(device=device)
+        imEyeL = imEyeL.to(device=device)
+        imEyeR = imEyeR.to(device=device)
+        faceGrid = faceGrid.to(device=device)
+        gaze = gaze.to(device=device)
         
         imFace = torch.autograd.Variable(imFace, requires_grad = True)
         imEyeL = torch.autograd.Variable(imEyeL, requires_grad = True)
@@ -196,6 +189,7 @@ def train(train_loader, model, criterion,optimizer, epoch):
                    epoch, i, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses))
 
+
 def validate(val_loader, model, criterion, epoch):
     global count_test
     batch_time = AverageMeter()
@@ -207,16 +201,14 @@ def validate(val_loader, model, criterion, epoch):
     model.eval()
     end = time.time()
 
-
-    oIndex = 0
     for i, (row, imFace, imEyeL, imEyeR, faceGrid, gaze) in enumerate(val_loader):
         # measure data loading time
         data_time.update(time.time() - end)
-        imFace = imFace.cuda()
-        imEyeL = imEyeL.cuda()
-        imEyeR = imEyeR.cuda()
-        faceGrid = faceGrid.cuda()
-        gaze = gaze.cuda()
+        imFace = imFace.to(device=device)
+        imEyeL = imEyeL.to(device=device)
+        imEyeR = imEyeR.to(device=device)
+        faceGrid = faceGrid.to(device=device)
+        gaze = gaze.to(device=device)
         
         imFace = torch.autograd.Variable(imFace, requires_grad = False)
         imEyeL = torch.autograd.Variable(imEyeL, requires_grad = False)
@@ -243,7 +235,6 @@ def validate(val_loader, model, criterion, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
 
-
         print('Epoch (val): [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
@@ -255,6 +246,7 @@ def validate(val_loader, model, criterion, epoch):
 
 CHECKPOINTS_PATH = '.'
 
+
 def load_checkpoint(filename='checkpoint.pth.tar'):
     filename = os.path.join(CHECKPOINTS_PATH, filename)
     print(filename)
@@ -262,6 +254,7 @@ def load_checkpoint(filename='checkpoint.pth.tar'):
         return None
     state = torch.load(filename)
     return state
+
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     if not os.path.isdir(CHECKPOINTS_PATH):

@@ -112,9 +112,9 @@ class TabletGazeData(data.Dataset):
         self.screenCenterYCM = self.screenHeightCM / 2
 
         if split == 'train':
-            subject_split = range(0, math.floor(self.subjects * 0.8)) # Use 80% of the set for training
+            subject_split = range(0, math.ceil(self.subjects * 0.8)) # Use 80% of the set for training
         elif split == 'test':
-            subject_split = range(math.floor(self.subjects * 0.8), self.subjects) # Use 20% of the set for testing
+            subject_split = range(math.ceil(self.subjects * 0.8), self.subjects) # Use 20% of the set for testing
         else:
             subject_split = range(0, self.subjects)
 

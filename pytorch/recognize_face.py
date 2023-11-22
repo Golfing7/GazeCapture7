@@ -1,10 +1,13 @@
 import cv2
 import numpy as np
 import insightface
+import onnxruntime
 from insightface.app import FaceAnalysis
 from extractFrames import get_face_grid, draw_detected_features
+print(onnxruntime.get_device())
+print(onnxruntime.__version__)
 
-app = FaceAnalysis(providers=['CPUExecutionProvider'])
+app = FaceAnalysis(providers=['ROCMExecutionProvider'])
 app.prepare(ctx_id=0, det_size=(640, 640))
 
 
@@ -59,5 +62,6 @@ if __name__ == '__main__':
     # face_bbx, eyes = extract_faces(cv2.imread('test.jpg'))
     # cv2.imwrite('out__.jpg', draw_on(cv2.imread('test.jpg'), face_bbx, eyes))
     img, faces, features = insight_extract(cv2.imread('out_0.jpg'))
+    data = insight_extract(cv2.imread('out_0.jpg'))
     draw_detected_features(img, faces, features)
     cv2.imwrite('output.jpg', img)

@@ -6,10 +6,7 @@ Parses frames out of a video file for the use of testing the images.
 
 import numpy as np
 import cv2
-import time
 import os
-import scipy.io as sio
-import insightface
 import av
 
 # print(os.environ['OPENCV_DATA'])
