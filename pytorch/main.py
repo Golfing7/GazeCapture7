@@ -7,7 +7,7 @@ import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
 
-from ITrackerData import TabletGazeData
+from ITrackerData import TabletGazePreprocessData
 from ITrackerModel import ITrackerModel
 
 '''
@@ -92,8 +92,8 @@ def main():
         else:
             print('Warning: Could not read checkpoint!')
 
-    dataTrain = TabletGazeData(dataPath = args.data_path, split='train', imSize = imSize)
-    dataVal = TabletGazeData(dataPath = args.data_path, split='test', imSize = imSize)
+    dataTrain = TabletGazePreprocessData(dataPath = args.data_path, split='train', imSize = imSize)
+    dataVal = TabletGazePreprocessData(dataPath = args.data_path, split='test', imSize = imSize)
    
     train_loader = torch.utils.data.DataLoader(
         dataTrain,

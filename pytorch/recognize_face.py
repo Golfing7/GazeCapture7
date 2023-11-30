@@ -30,6 +30,8 @@ def extract_faces(img):
 
 
 def insight_extract(img):
+    if True:
+        return [img, [[509, 196, 313, 412]], [[[[551, 307, 78, 78], [704, 309, 78, 78]], [10, 7, 6, 14]]]]
     face_detections, eyes = extract_faces(img)
 
     faces = []
@@ -62,6 +64,7 @@ if __name__ == '__main__':
     # face_bbx, eyes = extract_faces(cv2.imread('test.jpg'))
     # cv2.imwrite('out__.jpg', draw_on(cv2.imread('test.jpg'), face_bbx, eyes))
     img, faces, features = insight_extract(cv2.imread('out_0.jpg'))
-    data = insight_extract(cv2.imread('out_0.jpg'))
+    print(faces, features)
+    # data = insight_extract(cv2.imread('out_0.jpg'))
     draw_detected_features(img, faces, features)
     cv2.imwrite('output.jpg', img)

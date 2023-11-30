@@ -1,20 +1,9 @@
 import math, shutil, os, time, argparse
-import numpy as np
-import scipy.io as sio
 
-import torch
 import torch.nn as nn
 import torch.nn.parallel
-import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-import torchvision.models as models
-import extractFrames
-import cv2
-import torchvision.transforms as transforms
-from PIL import Image
 from main import AverageMeter
 
 from ITrackerData import *
@@ -58,7 +47,7 @@ def run_tabletgaze_generalization():
     if pytorch_model is None:
         pytorch_model = load_model()
 
-    data_set = TabletGazeData(dataPath="../data/tablet/")
+    data_set = TabletGazePreprocessData(dataPath="../data/tablet/")
     test_loader = torch.utils.data.DataLoader(
         data_set,
         batch_size=1, shuffle=False,
