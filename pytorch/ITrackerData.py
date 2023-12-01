@@ -147,28 +147,22 @@ class TabletGazePreprocessData(data.Dataset):
             if num % 100 == 0:
                 print('Loading frame %s for video file %s' % (num, path_to_video))
 
-            # Frame time is normally stored in MS. We need seconds.
-            frame_time = frame_time / 1000
             # Get the dot index and check if the trial hasn't started or has already finished.
             dot_index = self.get_dot_index(subject - 1, trial - 1, pose - 1, frame_time)
             if dot_index < 0 or dot_index >= 35:
                 continue
 
-            features = recognize_face.insight_extract(frame)
+            features = recognize_face.detect_features(frame)
             faces = features[1]
             # Skip the face if it wasn't detected!
             if len(faces) == 0:
                 continue
 
-            eyes, faceGrid = features[2][0]
-            if len(eyes) < 2:
-                continue
-
-            faceGrid = self.makeGrid(faceGrid)
+            right_eye, left_eye = features[2][0]
+            faceGrid = self.makeGrid(features[2][1])
 
             # to tensor
-            row = torch.LongTensor([int(index)])
-            data_points.append([np.array(faces[0]), np.array(eyes[1]), np.array(eyes[0]), faceGrid, frame_time, num - 1])
+            data_points.append([np.array(faces[0]), np.array(left_eye), np.array(right_eye), faceGrid, frame_time, num - 1])
 
         print('Loaded %s data frames from %s %s %s' % (len(data_points), subject, trial, pose))
         return [data_points, subject, trial, pose]
@@ -233,11 +227,11 @@ class TabletGazePostprocessData(data.Dataset):
         else:
             subject_split = range(0, self.subjects)
 
-        self.indices = []
-        for subject in subject_split:
-            for trial in range(0, 4):
-                for pose in range(0, 4):
-                    self.indices.append([subject + 1, trial + 1, pose + 1])
+        self.indices = [[1, 1, 1]]
+        # for subject in subject_split:
+        #     for trial in range(0, 4):
+        #         for pose in range(0, 4):
+        #             self.indices.append([subject + 1, trial + 1, pose + 1])
 
 
     def makeGrid(self, params):
@@ -281,11 +275,9 @@ class TabletGazePostprocessData(data.Dataset):
             eyes_l = f.get(f'{subject}/{trial}_{pose}/eyes_l')[()]
             eyes_r = f.get(f'{subject}/{trial}_{pose}/eyes_r')[()]
             metadata_loaded = f.get(f'{subject}/{trial}_{pose}/metadata')[()]
-            frame_times = f.get(f'{subject}/{trial}_{pose}/frame_times')[()]
             frame_indices = f.get(f'{subject}/{trial}_{pose}/frame_indices')[()]
             for i, frame_index in enumerate(frame_indices):
-                frame = frames[frame_index - 1]
-                frame_time = frame_times[i]
+                frame, frame_time = frames[frame_index - 1]
                 face_grid = metadata_loaded[i]
                 face_loc = face_locations[i]
                 leye = eyes_l[i]

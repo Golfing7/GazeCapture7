@@ -145,7 +145,7 @@ def get_frames(video_file):
 
     to_return = []
     for idx, frame in enumerate(container.decode(video)):
-        to_return.append([cv2.cvtColor(frame.to_rgb().to_ndarray(), cv2.COLOR_RGB2BGR), int(frame.pts * video.time_base * 1000)])
+        to_return.append([cv2.cvtColor(frame.to_rgb().to_ndarray(), cv2.COLOR_RGB2BGR), float(frame.pts * video.time_base)])
     container.close()
 
     return to_return
