@@ -1,2 +1,6 @@
 /pytorch/__pycache__/*.pyc
 /pytorch/__pycache__
+/data/
+/TabletGazeDataset/
+preprocessed.h5
+51_4_4.mp4

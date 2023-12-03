@@ -11,6 +11,7 @@ import numpy as np
 import math
 import extractFrames, recognize_face
 import re
+import time
 
 '''
 Data loader for the iTracker.
@@ -78,14 +79,12 @@ class TabletGazePreprocessData(data.Dataset):
         self.imSize = imSize
         self.gridSize = gridSize
 
-        print('Loading TabletGaze dataset...')
-
         self.gaze_pts = loadMetadata(os.path.join(dataPath, 'gazePts.mat'), struct_as_record=True)['gazePts'].tolist()
         self.gaze_points_x = self.gaze_pts[2]
         self.gaze_points_y = self.gaze_pts[3]
         self.startTime = loadMetadata(os.path.join(dataPath, 'startTime.mat'), struct_as_record=True)['startTime'].tolist()
 
-        self.subjects = 1
+        self.subjects = 51
         self.screenWidthCM = 22.62
         self.screenHeightCM = 14.14
 
@@ -139,32 +138,33 @@ class TabletGazePreprocessData(data.Dataset):
         video_name = f'{subject}/{subject}_{trial}_{pose}.mp4'
         path_to_video = os.path.join(self.data_path, video_name)
         print('Loading frames for %s' % path_to_video)
-        frames = extractFrames.get_frames(path_to_video)
-        print('Loaded %s frames for %s' % (len(frames), path_to_video))
         num = 0
-        for frame, frame_time in frames:
+        def parse_frame(frame, frame_time):
+            nonlocal num
             num += 1
-            if num % 100 == 0:
+            if num % 1000 == 0:
                 print('Loading frame %s for video file %s' % (num, path_to_video))
 
             # Get the dot index and check if the trial hasn't started or has already finished.
             dot_index = self.get_dot_index(subject - 1, trial - 1, pose - 1, frame_time)
             if dot_index < 0 or dot_index >= 35:
-                continue
+                return
 
             features = recognize_face.detect_features(frame)
+
             faces = features[1]
             # Skip the face if it wasn't detected!
             if len(faces) == 0:
-                continue
+                return
 
             right_eye, left_eye = features[2][0]
             faceGrid = self.makeGrid(features[2][1])
 
             # to tensor
-            data_points.append([np.array(faces[0]), np.array(left_eye), np.array(right_eye), faceGrid, frame_time, num - 1])
+            data_points.append(
+                [np.array(faces[0]), np.array(left_eye), np.array(right_eye), faceGrid, frame_time, num - 1])
 
-        print('Loaded %s data frames from %s %s %s' % (len(data_points), subject, trial, pose))
+        extractFrames.get_frames(path_to_video, parse_frame)
         return [data_points, subject, trial, pose]
 
 
@@ -184,8 +184,6 @@ class TabletGazePostprocessData(data.Dataset):
         self.data_path = dataPath
         self.imSize = imSize
         self.gridSize = gridSize
-
-        print('Loading TabletGaze dataset...')
 
         self.gaze_pts = loadMetadata(os.path.join(dataPath, 'gazePts.mat'), struct_as_record=True)['gazePts'].tolist()
         self.gaze_points_x = self.gaze_pts[2]
@@ -213,7 +211,7 @@ class TabletGazePostprocessData(data.Dataset):
         ])
 
         self.preprocess_path = preprocess_path
-        self.subjects = 1
+        self.subjects = 51
         self.screenWidthCM = 22.62
         self.screenHeightCM = 14.14
 
@@ -227,11 +225,11 @@ class TabletGazePostprocessData(data.Dataset):
         else:
             subject_split = range(0, self.subjects)
 
-        self.indices = [[1, 1, 1]]
-        # for subject in subject_split:
-        #     for trial in range(0, 4):
-        #         for pose in range(0, 4):
-        #             self.indices.append([subject + 1, trial + 1, pose + 1])
+        self.indices = []
+        for subject in subject_split:
+            for trial in range(0, 4):
+                for pose in range(0, 4):
+                    self.indices.append([subject + 1, trial + 1, pose + 1])
 
 
     def makeGrid(self, params):
@@ -266,31 +264,38 @@ class TabletGazePostprocessData(data.Dataset):
         data_points = []
         video_name = f'{subject}/{subject}_{trial}_{pose}.mp4'
         path_to_video = os.path.join(self.data_path, video_name)
-        print('Loading frames for %s' % path_to_video)
-        frames = extractFrames.get_frames(path_to_video)
-        print('Loaded %s frames for %s' % (len(frames), path_to_video))
         num = 0
+
         with h5py.File(self.preprocess_path, 'r') as f:
             face_locations = f.get(f'{subject}/{trial}_{pose}/faces')[()]
             eyes_l = f.get(f'{subject}/{trial}_{pose}/eyes_l')[()]
             eyes_r = f.get(f'{subject}/{trial}_{pose}/eyes_r')[()]
             metadata_loaded = f.get(f'{subject}/{trial}_{pose}/metadata')[()]
             frame_indices = f.get(f'{subject}/{trial}_{pose}/frame_indices')[()]
-            for i, frame_index in enumerate(frame_indices):
-                frame, frame_time = frames[frame_index - 1]
-                face_grid = metadata_loaded[i]
-                face_loc = face_locations[i]
-                leye = eyes_l[i]
-                reye = eyes_r[i]
-
+            next_frame = 0 
+            if len(frame_indices) == 0:
+                return [[], subject, trial, pose]
+            
+            num = 0
+            def process_frame(frame, frame_time, frame_idx):
+                nonlocal next_frame
+                nonlocal num
                 num += 1
-                if num % 100 == 0:
+                if num % 1000 == 0:
                     print('Loading frame %s for video file %s' % (num, path_to_video))
+                if next_frame >= len(frame_indices) or not frame_indices[next_frame] == frame_idx:
+                    return
+
+                face_grid = metadata_loaded[next_frame]
+                face_loc = face_locations[next_frame]
+                leye = eyes_l[next_frame]
+                reye = eyes_r[next_frame]
+                next_frame += 1
 
                 # Get the dot index and check if the trial hasn't started or has already finished.
                 dot_index = self.get_dot_index(subject - 1, trial - 1, pose - 1, frame_time)
                 if dot_index < 0 or dot_index >= 35:
-                    continue
+                    return
 
                 topleft_dot_x_cm = self.gaze_points_x[dot_index]
                 topleft_dot_y_cm = self.gaze_points_y[dot_index]
@@ -318,8 +323,9 @@ class TabletGazePostprocessData(data.Dataset):
                 # to tensor
                 row = torch.LongTensor([int(index)])
                 data_points.append([row, imFace, imEyeL, imEyeR, face_grid, gaze, dot_index, frame_time])
+        
+            extractFrames.get_frames(path_to_video, process_frame)
 
-        print('Loaded %s data frames from %s %s %s' % (len(data_points), subject, trial, pose))
         return [data_points, subject, trial, pose]
 
 

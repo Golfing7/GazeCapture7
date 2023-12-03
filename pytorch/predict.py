@@ -47,17 +47,17 @@ def run_tabletgaze_generalization():
     if pytorch_model is None:
         pytorch_model = load_model()
 
-    data_set = TabletGazePostprocessData(dataPath="../data/tablet/")
+    data_set = TabletGazePostprocessData(dataPath="data/tablet/")
     test_loader = torch.utils.data.DataLoader(
         data_set,
         batch_size=1, shuffle=False,
-        num_workers=1, pin_memory=False)
+        num_workers=1, pin_memory=True)
 
     losses = AverageMeter()
     lossesLin = AverageMeter()
 
     criterion = nn.MSELoss().cuda() # Mean squared error loss function
-    for i, (frame_group, subject, trial, pose) in enumerate(test_loader):
+    for i, (frame_group) in enumerate(test_loader):
         for frame_data in frame_group:
             row, imFace, imEyeL, imEyeR, faceGrid, gaze, index, frame_time = frame_data
 
@@ -115,15 +115,4 @@ def load_model(filename="checkpoint.pth.tar"):
     return model
 
 if __name__ == '__main__':
-    with h5py.File('preprocessed.h5', 'r') as f:
-        for thing, obj in f.items():
-            print(thing)
-            print(obj)
-            print(f[thing].get('1_1'))
-            if isinstance(obj, h5py.Group):
-                for t1, o1 in obj.items():
-                    print(t1)
-                    print(o1)
-
-    print('Test {test_thing:.4f}'.format(test_thing=1))
     run_tabletgaze_generalization()

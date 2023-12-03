@@ -4,6 +4,9 @@ import torch.nn as nn
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data
+import gdown
+import tqdm
+import os
 
 from ITrackerData import TabletGazePreprocessData
 
@@ -14,9 +17,12 @@ def preprocess_dataset(dataset_path, output_path='preprocessed.h5'):
     """
 
     # Create the data loader and load all frames.
-    loader = torch.utils.data.DataLoader(TabletGazePreprocessData(dataset_path), shuffle=False)
+    loader = torch.utils.data.DataLoader(TabletGazePreprocessData(dataset_path), pin_memory=True, shuffle=False, num_workers=16)
 
-    for i, (video_data) in enumerate(loader):
+    # if os.path.exists(output_path):
+    #     os.remove(output_path)
+
+    for video_data in tqdm.tqdm(loader):
         face = []
         eye_l = []
         eye_r = []
@@ -28,11 +34,11 @@ def preprocess_dataset(dataset_path, output_path='preprocessed.h5'):
         pose = video_data[3].item()
         for frame_data in frame_group:
             imFace, imEyeL, imEyeR, faceGrid, frame_time, index = frame_data
-            face.append(imFace.numpy()[0])
-            eye_l.append(imEyeL.numpy()[0])
-            eye_r.append(imEyeR.numpy()[0])
-            metadata_record.append(faceGrid.numpy()[0])
-            frame_indices.append(index.numpy()[0])
+            face.append(imFace.numpy().copy()[0])
+            eye_l.append(imEyeL.numpy().copy()[0])
+            eye_r.append(imEyeR.numpy().copy()[0])
+            metadata_record.append(faceGrid.numpy().copy()[0])
+            frame_indices.append(index.numpy().copy()[0])
 
         face_encode = np.array(face).astype(np.uint16)
         eye_l_encode = np.array(eye_l).astype(np.uint16)
@@ -48,4 +54,4 @@ def preprocess_dataset(dataset_path, output_path='preprocessed.h5'):
 
 
 if __name__ == '__main__':
-    preprocess_dataset('../data/tablet')
+    preprocess_dataset('TabletGazeDataset')

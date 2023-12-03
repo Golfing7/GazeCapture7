@@ -41,7 +41,7 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 parser = argparse.ArgumentParser(description='iTracker-pytorch-Trainer.')
-parser.add_argument('--data_path', default="../data/tablet/", help="Path to processed dataset. It should contain metadata.mat. Use prepareDataset.py.")
+parser.add_argument('--data_path', default="TabletGazeDataset", help="Path to processed dataset. It should contain metadata.mat. Use prepareDataset.py.")
 parser.add_argument('--sink', type=str2bool, nargs='?', const=True, default=False, help="Just sink and terminate.")
 parser.add_argument('--reset', type=str2bool, nargs='?', const=True, default=False, help="Start from scratch (do not load).")
 args = parser.parse_args()
@@ -50,11 +50,11 @@ args = parser.parse_args()
 doLoad = not args.reset # Load checkpoint at the beginning
 doTest = args.sink # Only run test, no training
 
-device = 'cpu'
+device = 'cuda'
 cpu_workers = 2
-cuda_workers = 16
+cuda_workers = 4
 epochs = 25
-batch_size = 64 if device == 'cpu' else torch.cuda.device_count()*100 # Change if out of cuda memory
+batch_size = 1 #64 if device == 'cpu' else torch.cuda.device_count() # This MUST be smaller as our data 'samples' are MUCH larger.
 
 base_lr = 0.0001
 momentum = 0.9
@@ -186,9 +186,9 @@ def train(train_loader, model, criterion,optimizer, epoch):
             count = count + 1
 
             print('Epoch (train): [{0}][{1}/{2}]\t'
-                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
+                'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
                 epoch, i, len(train_loader), batch_time=batch_time,
                 data_time=data_time, loss=losses))
 
@@ -203,7 +203,6 @@ def validate(val_loader, model, criterion, epoch):
     # switch to evaluate mode
     model.eval()
     end = time.time()
-
     for i, (frame_group, subject, trial, pose) in enumerate(val_loader):
         for frame_data in frame_group:
             # measure data loading time
@@ -246,6 +245,7 @@ def validate(val_loader, model, criterion, epoch):
                   'Error L2 {lossLin.val:.4f} ({lossLin.avg:.4f})\t'.format(
                 epoch, i, len(val_loader), batch_time=batch_time,
                 loss=losses, lossLin=lossesLin))
+
     return lossesLin.avg
 
 CHECKPOINTS_PATH = '.'

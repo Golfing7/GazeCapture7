@@ -30,6 +30,8 @@ eye_r_cascade = cv2.CascadeClassifier(cascades_path + 'haarcascade_righteye_2spl
 #     coordinates)
 # - parameterized: Whether to actually output the grid or just the
 #     [x y w h] of the 1s square within the gridW x gridH grid.
+# https://drive.google.com/drive/folders/1ZcYb4eH2jPndS5nkqQFcLHdGNM9dTF5C?usp=sharing
+# https://drive.google.com/file/d/gpip1UdhuJ_bulreFyGa8CziK4tdwXeHC2PIh/view?usp=sharing
 
 def faceGridFromFaceRect(frameW, frameH, gridW, gridH, labelFaceX, labelFaceY, labelFaceW, labelFaceH, parameterized):
 
@@ -135,7 +137,7 @@ def draw_detected_features(img, faces, face_features):
 
 gridSize = 25
 
-def get_frames(video_file):
+def get_frames(video_file, stream=None):
     """
     Parses all frames out of the given video file and returns an array of PIL images.
     """
@@ -145,30 +147,53 @@ def get_frames(video_file):
 
     to_return = []
     for idx, frame in enumerate(container.decode(video)):
-        to_return.append([cv2.cvtColor(frame.to_rgb().to_ndarray(), cv2.COLOR_RGB2BGR), float(frame.pts * video.time_base)])
+        image = cv2.cvtColor(frame.to_rgb().to_ndarray(), cv2.COLOR_RGB2BGR)
+        frame_time = float(frame.pts * video.time_base)
+        if stream is None or not callable(stream):
+            to_return.append([image, frame_time])
+        else:
+            stream(image, frame_time, idx)
     container.close()
 
     return to_return
 
+def count_frames(video_file, stream=None):
+    """
+    Parses all frames out of the given video file and returns an array of PIL images.
+    """
+
+    video = cv2.VideoCapture(video_file)
+    total = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+    return total
+
+# Total Videos: 817
+# Total Frames: 2574661
+# Total Usable Frames: 2087224
+
 if __name__ == '__main__':
+    import h5py
+    total_used_frames = 0
+    with h5py.File("preprocessed.h5") as f:
+        for subject in range(1, 52):
+            for trial in range(1, 5):
+                for pose in range(1, 5):
+                    data = f.get(f"{subject}/{trial}_{pose}/frame_indices")
+                    total_used_frames += len(data)
+    
+    print(total_used_frames)
 
-    # data = sio.loadmat('gazePts.mat', squeeze_me=True, struct_as_record=True)
-    # start_time = sio.loadmat('startTime.mat', squeeze_me=True, struct_as_record=True)
-    # print(start_time['startTime'])
-    # for data_pt in data['gazePts'].tolist():
-    #     print(data_pt)
+    total_frames = 0
+    total_videos = 0
+    for f in os.listdir('TabletGazeDataset'):
+        if not os.path.isdir(os.path.join('TabletGazeDataset', f)):
+            continue
+            
+        for sub in os.listdir(os.path.join('TabletGazeDataset', f)):
+            if not sub.endswith(".mp4"):
+                continue
+            total_videos += 1
+            total_frames += count_frames(os.path.join("TabletGazeDataset", f, sub))
 
-    read_in = cv2.imread('out_0.jpg')
-    features = extract_image_features(read_in)
-    print(features[1])
-    print(features[2][0][0])
-    draw_detected_features(*features)
-    cv2.imwrite('output.jpg', features[0])
-    # frames = get_frames("../data/tablet/1/1_1_1.mp4")
-    # for i in range(5):
-    #     cv2.imwrite(f'out_{i}.jpg', frames[i][0])
-    #     features = extract_image_features(frames[i][0])
-    #     draw_detected_features(*features)
-    #     cv2.imwrite(f'out_f{i}.jpg', frames[i][0])
-    # for frame in frames:
-    #     extract_image_features(frame)
+    print(f"Total Videos: {total_videos}")
+    print(f"Total Frames: {total_frames}")
+    pass

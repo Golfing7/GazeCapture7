@@ -5,15 +5,27 @@ import time
 import math
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from extractFrames import get_face_grid, draw_detected_features, get_frames
+from extractFrames import get_face_grid, get_frames
+from threading import local
 
-base_options = python.BaseOptions(model_asset_path='detector.tflite')
-options = vision.FaceDetectorOptions(base_options=base_options)
-detector = vision.FaceDetector.create_from_options(options)
+detector_storage = local()
+# base_options = python.BaseOptions(model_asset_path='detector.tflite')
+# options = vision.FaceDetectorOptions(base_options=base_options)
+# detector_storage.__dict__.setdefault('detector', vision.FaceDetector.create_from_options(options))
+
+
+# base_options = python.BaseOptions(model_asset_path='detector.tflite')
+# options = vision.FaceDetectorOptions(base_options=base_options)
+# detector = vision.FaceDetector.create_from_options(options)
 
 def detect_features(np_img):
+    if not hasattr(detector_storage, "detector"):
+        detector_storage.base_options = python.BaseOptions(model_asset_path='detector.tflite')
+        detector_storage.options = vision.FaceDetectorOptions(base_options=detector_storage.base_options)
+        detector_storage.detector = vision.FaceDetector.create_from_options(detector_storage.options)
+    
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np_img)
-    dresult = detector.detect(mp_image)
+    dresult = detector_storage.detector.detect(mp_image)
     if len(dresult.detections) == 0:
         return [np_img, [], []]
 
