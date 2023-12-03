@@ -58,4 +58,4 @@ def preprocess_dataset(dataset_path, output_path='preprocessed.h5'):
 
 
 if __name__ == '__main__':
-    preprocess_dataset('../data/tablet/')
+    preprocess_dataset('TabletGazeDataset')

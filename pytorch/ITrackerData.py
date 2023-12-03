@@ -244,12 +244,13 @@ class TabletGazePostprocessData(data.Dataset):
         else:
             subject_split = range(0, self.subjects)
 
+        subject_split = range(0, 1)
         self.indices = []
         self.h5file = h5py.File(self.preprocess_path, 'r')
         for subject in subject_split:
-            for trial in range(0, 4):
-                for pose in range(0, 4):
-                    for file in os.listdir(os.path.join(self.data_path, f"{subject}_{trial}_{pose}_image")):
+            for trial in range(0, 1):
+                for pose in range(0, 1):
+                    for file in os.listdir(os.path.join(self.data_path, f"{subject + 1}_{trial + 1}_{pose + 1}_image")):
                         if ".jpg" not in file:
                             continue
 
