@@ -139,8 +139,12 @@ class TabletGazePreprocessData(data.Dataset):
         path_to_video = os.path.join(self.data_path, video_name)
         print('Loading frames for %s' % path_to_video)
         num = 0
-        def parse_frame(frame, frame_time):
-            nonlocal num
+        frame_count = 0
+
+        if not os.path.exists(os.path.join(self.data_path, f"{subject}_{trial}_{pose}_image")):
+            os.makedirs(os.path.join(self.data_path, f"{subject}_{trial}_{pose}_image"))
+        def parse_frame(frame, frame_time, frame_idx):
+            nonlocal num, frame_count
             num += 1
             if num % 1000 == 0:
                 print('Loading frame %s for video file %s' % (num, path_to_video))
@@ -157,12 +161,27 @@ class TabletGazePreprocessData(data.Dataset):
             if len(faces) == 0:
                 return
 
+            # imFace = extractFrames.crop_to_bounds(frame, faces[0])
+            imFace = extractFrames.crop_to_bounds(frame, faces[0])
             right_eye, left_eye = features[2][0]
+
+            face_x = faces[0][0]
+            face_y = faces[0][1]
+
+            # Offset eyes by this amount
+            right_eye[0] -= face_x
+            right_eye[1] -= face_y
+
+            left_eye[0] -= face_x
+            left_eye[1] -= face_y
+
             faceGrid = self.makeGrid(features[2][1])
+            cv2.imwrite(os.path.join(self.data_path, f"{subject}_{trial}_{pose}_image/{frame_count}.jpg"), imFace)
 
             # to tensor
             data_points.append(
                 [np.array(faces[0]), np.array(left_eye), np.array(right_eye), faceGrid, frame_time, num - 1])
+            frame_count += 1
 
         extractFrames.get_frames(path_to_video, parse_frame)
         return [data_points, subject, trial, pose]
@@ -226,10 +245,15 @@ class TabletGazePostprocessData(data.Dataset):
             subject_split = range(0, self.subjects)
 
         self.indices = []
+        self.h5file = h5py.File(self.preprocess_path, 'r')
         for subject in subject_split:
             for trial in range(0, 4):
                 for pose in range(0, 4):
-                    self.indices.append([subject + 1, trial + 1, pose + 1])
+                    for file in os.listdir(os.path.join(self.data_path, f"{subject}_{trial}_{pose}_image")):
+                        if ".jpg" not in file:
+                            continue
+
+                        self.indices.append([subject + 1, trial + 1, pose + 1, int(file.replace(".jpg", ""))])
 
 
     def makeGrid(self, params):
@@ -260,71 +284,58 @@ class TabletGazePostprocessData(data.Dataset):
         """
         Gets a batch of frames from the given video index.
         """
-        subject, trial, pose = self.indices[index]
+        subject, trial, pose, frame_num = self.indices[index]
         data_points = []
-        video_name = f'{subject}/{subject}_{trial}_{pose}.mp4'
-        path_to_video = os.path.join(self.data_path, video_name)
-        num = 0
+        file_name = f"{subject}_{trial}_{pose}_image/{frame_num}.jpg"
 
-        with h5py.File(self.preprocess_path, 'r') as f:
-            face_locations = f.get(f'{subject}/{trial}_{pose}/faces')[()]
-            eyes_l = f.get(f'{subject}/{trial}_{pose}/eyes_l')[()]
-            eyes_r = f.get(f'{subject}/{trial}_{pose}/eyes_r')[()]
-            metadata_loaded = f.get(f'{subject}/{trial}_{pose}/metadata')[()]
-            frame_indices = f.get(f'{subject}/{trial}_{pose}/frame_indices')[()]
-            next_frame = 0 
-            if len(frame_indices) == 0:
-                return [[], subject, trial, pose]
-            
-            num = 0
-            def process_frame(frame, frame_time, frame_idx):
-                nonlocal next_frame
-                nonlocal num
-                num += 1
-                if num % 1000 == 0:
-                    print('Loading frame %s for video file %s' % (num, path_to_video))
-                if next_frame >= len(frame_indices) or not frame_indices[next_frame] == frame_idx:
-                    return
+        face_locations = self.h5file.get(f'{subject}/{trial}_{pose}/faces')[()]
+        eyes_l = self.h5file.get(f'{subject}/{trial}_{pose}/eyes_l')[()]
+        eyes_r = self.h5file.get(f'{subject}/{trial}_{pose}/eyes_r')[()]
+        metadata_loaded = self.h5file.get(f'{subject}/{trial}_{pose}/metadata')[()]
+        frametime_loaded = self.h5file.get(f'{subject}/{trial}_{pose}/frame_times')[()]
+        frame_indices = self.h5file.get(f'{subject}/{trial}_{pose}/frame_indices')[()]
 
-                face_grid = metadata_loaded[next_frame]
-                face_loc = face_locations[next_frame]
-                leye = eyes_l[next_frame]
-                reye = eyes_r[next_frame]
-                next_frame += 1
+        if frame_num >= len(frame_indices):
+            return
 
-                # Get the dot index and check if the trial hasn't started or has already finished.
-                dot_index = self.get_dot_index(subject - 1, trial - 1, pose - 1, frame_time)
-                if dot_index < 0 or dot_index >= 35:
-                    return
+        face_grid = metadata_loaded[frame_num]
+        frame_time = frametime_loaded[frame_num]
+        leye = eyes_l[frame_num]
+        reye = eyes_r[frame_num]
 
-                topleft_dot_x_cm = self.gaze_points_x[dot_index]
-                topleft_dot_y_cm = self.gaze_points_y[dot_index]
+        # Get the dot index and check if the trial hasn't started or has already finished.
+        dot_index = self.get_dot_index(subject - 1, trial - 1, pose - 1, frame_time)
+        if dot_index < 0 or dot_index >= 35:
+            return
 
-                # We need to transform the dot locations to be based from the center of the screen, which is what iTracker uses.
-                dot_x_cm = topleft_dot_x_cm - self.screenCenterXCM
-                dot_y_cm = -topleft_dot_y_cm
+        topleft_dot_x_cm = self.gaze_points_x[dot_index]
+        topleft_dot_y_cm = self.gaze_points_y[dot_index]
 
-                gaze = np.array([dot_x_cm, dot_y_cm], np.float32)
+        # We need to transform the dot locations to be based from the center of the screen, which is what iTracker uses.
+        dot_x_cm = topleft_dot_x_cm - self.screenCenterXCM
+        dot_y_cm = -topleft_dot_y_cm
+        frame = cv2.imread(os.path.join(self.data_path, file_name))
 
-                imFace = extractFrames.crop_to_bounds(frame, face_loc)
-                imEyeR = extractFrames.crop_to_bounds(frame, reye)
-                imEyeL = extractFrames.crop_to_bounds(frame, leye)
+        gaze = np.array([dot_x_cm, dot_y_cm], np.float32)
 
-                imFace = Image.fromarray(cv2.cvtColor(imFace, cv2.COLOR_BGR2RGB))
-                imEyeR = Image.fromarray(cv2.cvtColor(imEyeR, cv2.COLOR_BGR2RGB))
-                imEyeL = Image.fromarray(cv2.cvtColor(imEyeL, cv2.COLOR_BGR2RGB))
+        imFace = frame
+        imEyeR = extractFrames.crop_to_bounds(frame, reye)
+        imEyeL = extractFrames.crop_to_bounds(frame, leye)
 
-                imFace = self.transformFace(imFace)
-                imEyeR = self.transformEyeR(imEyeR)
-                imEyeL = self.transformEyeL(imEyeL)
+        imFace = Image.fromarray(cv2.cvtColor(imFace, cv2.COLOR_BGR2RGB))
+        imEyeR = Image.fromarray(cv2.cvtColor(imEyeR, cv2.COLOR_BGR2RGB))
+        imEyeL = Image.fromarray(cv2.cvtColor(imEyeL, cv2.COLOR_BGR2RGB))
 
-                face_grid = self.makeGrid(face_grid)
+        imFace = self.transformFace(imFace)
+        imEyeR = self.transformEyeR(imEyeR)
+        imEyeL = self.transformEyeL(imEyeL)
 
-                # to tensor
-                row = torch.LongTensor([int(index)])
-                data_points.append([row, imFace, imEyeL, imEyeR, face_grid, gaze, dot_index, frame_time])
-        
-            extractFrames.get_frames(path_to_video, process_frame)
+        face_grid = self.makeGrid(face_grid)
+
+        # to tensor
+        row = torch.LongTensor([int(index)])
+
+        data_points.append([row, imFace, imEyeL, imEyeR, face_grid, gaze, dot_index, frame_time])
 
         return [data_points, subject, trial, pose]
 
