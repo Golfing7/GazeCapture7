@@ -1,70 +1,62 @@
 import cv2
 import numpy as np
-import insightface
-import onnxruntime
-from insightface.app import FaceAnalysis
-from extractFrames import get_face_grid, draw_detected_features
-print(onnxruntime.get_device())
-print(onnxruntime.__version__)
+import mediapipe as mp
+import time
+import math
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+from extractFrames import get_face_grid, get_frames
+from threading import local
 
-app = FaceAnalysis(providers=['ROCMExecutionProvider'])
-app.prepare(ctx_id=0, det_size=(640, 640))
-
-
-def extract_faces(img):
-    faces = app.get(img)
-
-    face_bbx = []
-    eyes = []
-    for i in range(len(faces)):
-        face = faces[i]
-        box = face.bbox.astype(int)
-        face_bbx.append(box)
-        if face.kps is not None:
-            kps = face.kps.astype(int)
-            rEye = kps[0]
-            lEye = kps[1]
-            eyes.append([rEye, lEye])
-
-    return face_bbx, eyes
+detector_storage = local()
+# base_options = python.BaseOptions(model_asset_path='detector.tflite')
+# options = vision.FaceDetectorOptions(base_options=base_options)
+# detector_storage.__dict__.setdefault('detector', vision.FaceDetector.create_from_options(options))
 
 
-def insight_extract(img):
-    if True:
-        return [img, [[509, 196, 313, 412]], [[[[551, 307, 78, 78], [704, 309, 78, 78]], [10, 7, 6, 14]]]]
-    face_detections, eyes = extract_faces(img)
+# base_options = python.BaseOptions(model_asset_path='detector.tflite')
+# options = vision.FaceDetectorOptions(base_options=base_options)
+# detector = vision.FaceDetector.create_from_options(options)
 
-    faces = []
-    face_features = []
-    for i in range(len(face_detections)):
-        bbx = face_detections[i]
-        eye_points = eyes[i]
-        face = [bbx[0], bbx[1], bbx[2] - bbx[0], bbx[3] - bbx[1]]
-        head_width = bbx[2] - bbx[0]
+def detect_features(np_img):
+    if not hasattr(detector_storage, "detector"):
+        detector_storage.base_options = python.BaseOptions(model_asset_path='detector.tflite')
+        detector_storage.options = vision.FaceDetectorOptions(base_options=detector_storage.base_options)
+        detector_storage.detector = vision.FaceDetector.create_from_options(detector_storage.options)
+    
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np_img)
+    dresult = detector_storage.detector.detect(mp_image)
+    if len(dresult.detections) == 0:
+        return [np_img, [], []]
 
-        # Save eye data
-        right_eye = eye_points[0]
-        left_eye = eye_points[1]
+    im_width = np_img.shape[1]
+    im_height = np_img.shape[0]
+    detection = dresult.detections[0]
+    right_eye = detection.keypoints[0]
+    left_eye = detection.keypoints[1]
 
-        # Create eye bounding boxes as a proportion of head width.
-        eye_radius = int(head_width / 8)
-        right_eye_box = [right_eye[0] - eye_radius, right_eye[1] - eye_radius, eye_radius * 2, eye_radius * 2]
-        left_eye_box = [left_eye[0] - eye_radius, left_eye[1] - eye_radius, eye_radius * 2, eye_radius * 2]
+    face_bbx = detection.bounding_box
+    built_face_bbx = [face_bbx.origin_x, face_bbx.origin_y, face_bbx.width, face_bbx.height]
+    face_size = face_bbx.width
 
-        face_grid = get_face_grid(face, img.shape[1], img.shape[0], 25)
+    right_eye_px = [math.floor(right_eye.x * im_width), math.floor(right_eye.y * im_height)]
+    left_eye_px = [math.floor(left_eye.x * im_width), math.floor(left_eye.y * im_height)]
 
-        faces.append(face)
-        eye_boxes = [right_eye_box, left_eye_box]
-        face_features.append([eye_boxes, face_grid])
+    eye_ratio = math.ceil(face_size / 8)
+    right_eye_bbx = [right_eye_px[0] - eye_ratio, right_eye_px[1] - eye_ratio, eye_ratio * 2, eye_ratio * 2]
+    left_eye_bbx = [left_eye_px[0] - eye_ratio, left_eye_px[1] - eye_ratio, eye_ratio * 2, eye_ratio * 2]
 
-    return img, faces, face_features
+    return np_img, [built_face_bbx], [[right_eye_bbx, left_eye_bbx],
+                                      get_face_grid(built_face_bbx, im_width, im_height, 25)]
 
 
 if __name__ == '__main__':
-    # face_bbx, eyes = extract_faces(cv2.imread('test.jpg'))
-    # cv2.imwrite('out__.jpg', draw_on(cv2.imread('test.jpg'), face_bbx, eyes))
-    img, faces, features = insight_extract(cv2.imread('out_0.jpg'))
-    print(faces, features)
-    # data = insight_extract(cv2.imread('out_0.jpg'))
-    draw_detected_features(img, faces, features)
-    cv2.imwrite('output.jpg', img)
+    print("Starting")
+    frame_data = get_frames('51_4_4.mp4')
+    print("Read all frames...")
+    for i, (frame, frame_time) in enumerate(frame_data):
+        detect_features(frame)
+        if i % 100 == 0:
+            print(f"Checkpoint {i}")
+
+    pass

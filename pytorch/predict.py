@@ -47,7 +47,7 @@ def run_tabletgaze_generalization():
     if pytorch_model is None:
         pytorch_model = load_model()
 
-    data_set = TabletGazePreprocessData(dataPath="../data/tablet/")
+    data_set = TabletGazePostprocessData(dataPath="data/tablet/")
     test_loader = torch.utils.data.DataLoader(
         data_set,
         batch_size=1, shuffle=False,
@@ -115,5 +115,4 @@ def load_model(filename="checkpoint.pth.tar"):
     return model
 
 if __name__ == '__main__':
-    print('Test {test_thing:.4f}'.format(test_thing=1))
     run_tabletgaze_generalization()
