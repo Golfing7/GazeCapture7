@@ -38,6 +38,17 @@ Booktitle = {IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}
 
 MEAN_PATH = './'
 
+def clamp_eyes_to_frame(box, width, height):
+    if box[0] > 60000:
+        box[0] = 0
+    if box[1] > 60000:
+        box[1] = 0
+    
+    if box[0] > 1000:
+        box[0] = width
+    if box[1] > 1000:
+        box[1] = height
+
 def loadMetadata(filename, silent = False, struct_as_record = False):
     try:
         # http://stackoverflow.com/questions/6273634/access-array-contents-from-a-mat-file-loaded-using-scipy-io-loadmat-python
@@ -229,8 +240,8 @@ class TabletGazePostprocessData(data.Dataset):
             SubtractMean(meanImg=self.eyeRightMean),
         ])
 
+        self.subjects = 5 #51
         self.preprocess_path = preprocess_path
-        self.subjects = 51
         self.screenWidthCM = 22.62
         self.screenHeightCM = 14.14
 
@@ -244,12 +255,11 @@ class TabletGazePostprocessData(data.Dataset):
         else:
             subject_split = range(0, self.subjects)
 
-        subject_split = range(0, 1)
         self.indices = []
         self.h5file = h5py.File(self.preprocess_path, 'r')
         for subject in subject_split:
             for trial in range(0, 1):
-                for pose in range(0, 1):
+                for pose in range(0, 4):
                     for file in os.listdir(os.path.join(self.data_path, f"{subject + 1}_{trial + 1}_{pose + 1}_image")):
                         if ".jpg" not in file:
                             continue
@@ -281,15 +291,14 @@ class TabletGazePostprocessData(data.Dataset):
         dot_index = math.floor((current_time - time_start) / 3)
         return dot_index
 
+
     def __getitem__(self, index):
         """
         Gets a batch of frames from the given video index.
         """
         subject, trial, pose, frame_num = self.indices[index]
-        data_points = []
         file_name = f"{subject}_{trial}_{pose}_image/{frame_num}.jpg"
 
-        face_locations = self.h5file.get(f'{subject}/{trial}_{pose}/faces')[()]
         eyes_l = self.h5file.get(f'{subject}/{trial}_{pose}/eyes_l')[()]
         eyes_r = self.h5file.get(f'{subject}/{trial}_{pose}/eyes_r')[()]
         metadata_loaded = self.h5file.get(f'{subject}/{trial}_{pose}/metadata')[()]
@@ -318,27 +327,32 @@ class TabletGazePostprocessData(data.Dataset):
         frame = cv2.imread(os.path.join(self.data_path, file_name))
 
         gaze = np.array([dot_x_cm, dot_y_cm], np.float32)
+        clamp_eyes_to_frame(leye, frame.shape[1], frame.shape[0])
+        clamp_eyes_to_frame(reye, frame.shape[1], frame.shape[0])
 
         imFace = frame
         imEyeR = extractFrames.crop_to_bounds(frame, reye)
         imEyeL = extractFrames.crop_to_bounds(frame, leye)
 
-        imFace = Image.fromarray(cv2.cvtColor(imFace, cv2.COLOR_BGR2RGB))
-        imEyeR = Image.fromarray(cv2.cvtColor(imEyeR, cv2.COLOR_BGR2RGB))
-        imEyeL = Image.fromarray(cv2.cvtColor(imEyeL, cv2.COLOR_BGR2RGB))
+        try:
+            imFace = Image.fromarray(cv2.cvtColor(imFace, cv2.COLOR_BGR2RGB))
+            imEyeR = Image.fromarray(cv2.cvtColor(imEyeR, cv2.COLOR_BGR2RGB))
+            imEyeL = Image.fromarray(cv2.cvtColor(imEyeL, cv2.COLOR_BGR2RGB))
+        except:
+            print(f"Failed on {subject} {trial} {pose} {frame_num}")
+            print(f"Frame was {frame.shape} {leye} {reye}")
+            raise ValueError()
 
         imFace = self.transformFace(imFace)
         imEyeR = self.transformEyeR(imEyeR)
         imEyeL = self.transformEyeL(imEyeL)
 
         face_grid = self.makeGrid(face_grid)
+        face_grid = torch.FloatTensor(face_grid)
+        gaze = torch.FloatTensor(gaze)
 
-        # to tensor
-        row = torch.LongTensor([int(index)])
-
-        data_points.append([row, imFace, imEyeL, imEyeR, face_grid, gaze, dot_index, frame_time])
-
-        return [data_points, subject, trial, pose]
+        # print("Yes. We're still running.")
+        return [imFace, imEyeL, imEyeR, face_grid, gaze]
 
 
     def __len__(self):

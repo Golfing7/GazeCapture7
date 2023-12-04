@@ -1,3 +1,5 @@
+# Currently achieves 4.5059 (2.12) on the validation set.
+
 import shutil, os, time, argparse
 
 import torch
@@ -52,9 +54,9 @@ doTest = args.sink # Only run test, no training
 
 device = 'cuda'
 cpu_workers = 2
-cuda_workers = 4
+cuda_workers = 20
 epochs = 25
-batch_size = 1 #64 if device == 'cpu' else torch.cuda.device_count() # This MUST be smaller as our data 'samples' are MUCH larger.
+batch_size = 64 if device == 'cpu' else torch.cuda.device_count() * 100
 
 base_lr = 0.0001
 momentum = 0.9
@@ -149,48 +151,46 @@ def train(train_loader, model, criterion,optimizer, epoch):
 
     end = time.time()
 
-    for i, (frame_group, subject, trial, pose) in enumerate(train_loader):
-        for frame_data in frame_group:
-            # measure data loading time
-            row, imFace, imEyeL, imEyeR, faceGrid, gaze, index, frame_time = frame_data
-            data_time.update(time.time() - end)
+    for i, (imFace, imEyeL, imEyeR, faceGrid, gaze) in enumerate(train_loader):
+        # measure data loading time
+        data_time.update(time.time() - end)
 
-            imFace = imFace.to(device=device)
-            imEyeL = imEyeL.to(device=device)
-            imEyeR = imEyeR.to(device=device)
-            faceGrid = faceGrid.to(device=device)
-            gaze = gaze.to(device=device)
+        imFace = imFace.to(device=device)
+        imEyeL = imEyeL.to(device=device)
+        imEyeR = imEyeR.to(device=device)
+        faceGrid = faceGrid.to(device=device)
+        gaze = gaze.to(device=device)
 
-            imFace = torch.autograd.Variable(imFace, requires_grad=True)
-            imEyeL = torch.autograd.Variable(imEyeL, requires_grad=True)
-            imEyeR = torch.autograd.Variable(imEyeR, requires_grad=True)
-            faceGrid = torch.autograd.Variable(faceGrid, requires_grad=True)
-            gaze = torch.autograd.Variable(gaze, requires_grad=False)
+        imFace = torch.autograd.Variable(imFace, requires_grad=True)
+        imEyeL = torch.autograd.Variable(imEyeL, requires_grad=True)
+        imEyeR = torch.autograd.Variable(imEyeR, requires_grad=True)
+        faceGrid = torch.autograd.Variable(faceGrid, requires_grad=True)
+        gaze = torch.autograd.Variable(gaze, requires_grad=False)
 
-            # compute output
-            output = model(imFace, imEyeL, imEyeR, faceGrid)
+        # compute output
+        output = model(imFace, imEyeL, imEyeR, faceGrid)
 
-            loss = criterion(output, gaze)
+        loss = criterion(output, gaze)
 
-            losses.update(loss.data.item(), imFace.size(0))
+        losses.update(loss.data.item(), imFace.size(0))
 
-            # compute gradient and do SGD step
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        # compute gradient and do SGD step
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-            # measure elapsed time
-            batch_time.update(time.time() - end)
-            end = time.time()
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
 
-            count = count + 1
+        count = count + 1
 
-            print('Epoch (train): [{0}][{1}/{2}]\t'
-                'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
-                epoch, i, len(train_loader), batch_time=batch_time,
-                data_time=data_time, loss=losses))
+        print('Epoch (train): [{0}][{1}/{2}]\t'
+            'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+            'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+            'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
+            epoch, i, len(train_loader), batch_time=batch_time,
+            data_time=data_time, loss=losses))
 
 
 def validate(val_loader, model, criterion, epoch):
@@ -203,48 +203,46 @@ def validate(val_loader, model, criterion, epoch):
     # switch to evaluate mode
     model.eval()
     end = time.time()
-    for i, (frame_group, subject, trial, pose) in enumerate(val_loader):
-        for frame_data in frame_group:
-            # measure data loading time
-            data_time.update(time.time() - end)
-            row, imFace, imEyeL, imEyeR, faceGrid, gaze, index, frame_time = frame_data
-            imFace = imFace.to(device=device)
-            imEyeL = imEyeL.to(device=device)
-            imEyeR = imEyeR.to(device=device)
-            faceGrid = faceGrid.to(device=device)
-            gaze = gaze.to(device=device)
+    for i, (imFace, imEyeL, imEyeR, faceGrid, gaze) in enumerate(val_loader):
+        # measure data loading time
+        data_time.update(time.time() - end)
+        imFace = imFace.to(device=device)
+        imEyeL = imEyeL.to(device=device)
+        imEyeR = imEyeR.to(device=device)
+        faceGrid = faceGrid.to(device=device)
+        gaze = gaze.to(device=device)
 
-            imFace = torch.autograd.Variable(imFace, requires_grad=False)
-            imEyeL = torch.autograd.Variable(imEyeL, requires_grad=False)
-            imEyeR = torch.autograd.Variable(imEyeR, requires_grad=False)
-            faceGrid = torch.autograd.Variable(faceGrid, requires_grad=False)
-            gaze = torch.autograd.Variable(gaze, requires_grad=False)
+        imFace = torch.autograd.Variable(imFace, requires_grad=False)
+        imEyeL = torch.autograd.Variable(imEyeL, requires_grad=False)
+        imEyeR = torch.autograd.Variable(imEyeR, requires_grad=False)
+        faceGrid = torch.autograd.Variable(faceGrid, requires_grad=False)
+        gaze = torch.autograd.Variable(gaze, requires_grad=False)
 
-            # compute output
-            with torch.no_grad():
-                output = model(imFace, imEyeL, imEyeR, faceGrid)
+        # compute output
+        with torch.no_grad():
+            output = model(imFace, imEyeL, imEyeR, faceGrid)
 
-            loss = criterion(output, gaze)
+        loss = criterion(output, gaze)
 
-            lossLin = output - gaze
-            lossLin = torch.mul(lossLin, lossLin)
-            lossLin = torch.sum(lossLin, 1)
-            lossLin = torch.mean(torch.sqrt(lossLin))
+        lossLin = output - gaze
+        lossLin = torch.mul(lossLin, lossLin)
+        lossLin = torch.sum(lossLin, 1)
+        lossLin = torch.mean(torch.sqrt(lossLin))
 
-            losses.update(loss.data.item(), imFace.size(0))
-            lossesLin.update(lossLin.item(), imFace.size(0))
+        losses.update(loss.data.item(), imFace.size(0))
+        lossesLin.update(lossLin.item(), imFace.size(0))
 
-            # compute gradient and do SGD step
-            # measure elapsed time
-            batch_time.update(time.time() - end)
-            end = time.time()
+        # compute gradient and do SGD step
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
 
-            print('Epoch (val): [{0}][{1}/{2}]\t'
-                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                  'Error L2 {lossLin.val:.4f} ({lossLin.avg:.4f})\t'.format(
-                epoch, i, len(val_loader), batch_time=batch_time,
-                loss=losses, lossLin=lossesLin))
+        print('Epoch (val): [{0}][{1}/{2}]\t'
+                'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                'Error L2 {lossLin.val:.4f} ({lossLin.avg:.4f})\t'.format(
+            epoch, i, len(val_loader), batch_time=batch_time,
+            loss=losses, lossLin=lossesLin))
 
     return lossesLin.avg
 

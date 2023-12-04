@@ -17,7 +17,7 @@ def preprocess_dataset(dataset_path, output_path='preprocessed.h5'):
     """
 
     # Create the data loader and load all frames.
-    loader = torch.utils.data.DataLoader(TabletGazePreprocessData(dataset_path), pin_memory=True, shuffle=False)
+    loader = torch.utils.data.DataLoader(TabletGazePreprocessData(dataset_path), pin_memory=True, shuffle=False, num_workers=24)
 
     # if os.path.exists(output_path):
     #     os.remove(output_path)
