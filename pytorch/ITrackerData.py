@@ -334,20 +334,14 @@ class TabletGazePostprocessData(data.Dataset):
         imEyeR = extractFrames.crop_to_bounds(frame, reye)
         imEyeL = extractFrames.crop_to_bounds(frame, leye)
 
-        try:
-            imFace = Image.fromarray(cv2.cvtColor(imFace, cv2.COLOR_BGR2RGB))
-            imEyeR = Image.fromarray(cv2.cvtColor(imEyeR, cv2.COLOR_BGR2RGB))
-            imEyeL = Image.fromarray(cv2.cvtColor(imEyeL, cv2.COLOR_BGR2RGB))
-        except:
-            print(f"Failed on {subject} {trial} {pose} {frame_num}")
-            print(f"Frame was {frame.shape} {leye} {reye}")
-            raise ValueError()
+        imFace = Image.fromarray(cv2.cvtColor(imFace, cv2.COLOR_BGR2RGB))
+        imEyeR = Image.fromarray(cv2.cvtColor(imEyeR, cv2.COLOR_BGR2RGB))
+        imEyeL = Image.fromarray(cv2.cvtColor(imEyeL, cv2.COLOR_BGR2RGB))
 
         imFace = self.transformFace(imFace)
         imEyeR = self.transformEyeR(imEyeR)
         imEyeL = self.transformEyeL(imEyeL)
 
-        face_grid = self.makeGrid(face_grid)
         face_grid = torch.FloatTensor(face_grid)
         gaze = torch.FloatTensor(gaze)
 
@@ -356,6 +350,92 @@ class TabletGazePostprocessData(data.Dataset):
 
 
     def __len__(self):
+        return len(self.indices)
+    
+class MPIIGazeData(data.Dataset):
+    def __init__(self, dataPath: str, split: str = "all", imSize=(224,224), gridSize=(25, 25)):
+        self.dataset_path = dataPath
+
+        self.faceMean = loadMetadata(os.path.join(MEAN_PATH, 'mean_face_224.mat'))['image_mean']
+        self.eyeLeftMean = loadMetadata(os.path.join(MEAN_PATH, 'mean_left_224.mat'))['image_mean']
+        self.eyeRightMean = loadMetadata(os.path.join(MEAN_PATH, 'mean_right_224.mat'))['image_mean']
+        self.imSize = imSize
+        self.gridSize = gridSize
+        self.screenDistanceCM = 50.8
+
+        self.transformFace = transforms.Compose([
+            transforms.Resize(self.imSize),
+            transforms.ToTensor(),
+            SubtractMean(meanImg=self.faceMean),
+        ])
+        self.transformEyeL = transforms.Compose([
+            transforms.Resize(self.imSize),
+            transforms.ToTensor(),
+            SubtractMean(meanImg=self.eyeLeftMean),
+        ])
+        self.transformEyeR = transforms.Compose([
+            transforms.Resize(self.imSize),
+            transforms.ToTensor(),
+            SubtractMean(meanImg=self.eyeRightMean),
+        ])
+
+        if split == 'train':
+            subject_split = range(0, 14)
+        elif split == 'test':
+            subject_split = range(14, 15)
+        else:
+            subject_split = range(0, 15)
+
+        self.indices = []
+        with h5py.File(self.dataset_path, 'r') as f:
+            for i in subject_split:
+                count = f.get(f'p{i:02}/count')
+                for n in range(0, count[()]):
+                    self.indices.append([i, n])
+
+
+    def transform_angle(self, angle):
+        pitch = angle[0]
+        yaw = angle[1]
+
+        y_offset = -math.tan(pitch) * self.screenDistanceCM
+        x_offset = math.tan(yaw) * self.screenDistanceCM
+
+        return np.array([x_offset, y_offset], np.float32)
+
+
+    def __getitem__(
+            self,
+            index: int):
+        subject, idx = self.indices[index]
+        with h5py.File(self.dataset_path, 'r') as f:
+            image = f.get(f'p{subject:02}/image/{idx:04}')[()]
+            eyes = f.get(f'p{subject:02}/eyes/{idx:04}')[()]
+            gaze = f.get(f'p{subject:02}/gaze/{idx:04}')[()]
+
+        reye, leye = eyes
+        clamp_eyes_to_frame(reye, image.shape[1], image.shape[0])
+        clamp_eyes_to_frame(leye, image.shape[1], image.shape[0])
+
+        imFace = image
+        imEyeR = extractFrames.crop_to_bounds(image, reye)
+        imEyeL = extractFrames.crop_to_bounds(image, leye)
+
+        imFace = Image.fromarray(cv2.cvtColor(imFace, cv2.COLOR_BGR2RGB))
+        imEyeR = Image.fromarray(cv2.cvtColor(imEyeR, cv2.COLOR_BGR2RGB))
+        imEyeL = Image.fromarray(cv2.cvtColor(imEyeL, cv2.COLOR_BGR2RGB))
+
+        imFace = self.transformFace(imFace)
+        imEyeR = self.transformEyeR(imEyeR)
+        imEyeL = self.transformEyeL(imEyeL)
+
+        face_grid = extractFrames.generate_centered_face_grid(*self.gridSize)
+        face_grid = torch.FloatTensor(face_grid)
+        gaze = self.transform_angle(gaze)
+        gaze = torch.FloatTensor(gaze)
+        return imFace, imEyeL, imEyeR, face_grid, gaze
+
+    def __len__(self) -> int:
         return len(self.indices)
 
 class ITrackerData(data.Dataset):

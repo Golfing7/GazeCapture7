@@ -33,6 +33,25 @@ eye_r_cascade = cv2.CascadeClassifier(cascades_path + 'haarcascade_righteye_2spl
 # https://drive.google.com/drive/folders/1ZcYb4eH2jPndS5nkqQFcLHdGNM9dTF5C?usp=sharing
 # https://drive.google.com/file/d/gpip1UdhuJ_bulreFyGa8CziK4tdwXeHC2PIh/view?usp=sharing
 
+def generate_centered_face_grid(gridW, gridH):
+    labelFaceGrid = np.zeros(gridW * gridH)
+    grid = np.zeros((gridH, gridW))
+
+    xLo = 7
+    yLo = 7
+
+    xHi = 18
+    yHi = 18
+
+    faceLocation = np.ones((yHi - yLo, xHi - xLo))
+    grid[yLo:yHi, xLo:xHi] = faceLocation
+
+    # Flatten the grid.
+    grid = np.transpose(grid)
+    labelFaceGrid = grid.flatten()
+
+    return labelFaceGrid
+
 def faceGridFromFaceRect(frameW, frameH, gridW, gridH, labelFaceX, labelFaceY, labelFaceW, labelFaceH, parameterized):
 
     scaleX = gridW / frameW

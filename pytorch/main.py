@@ -1,4 +1,6 @@
 # Currently achieves 4.5059 (2.12) on the validation set.
+# Currently achieves 14.8343 (3.85) on MPIIGaze validation.
+# Currently achieves 8.9463 (2.99) on true MPIIGaze cross generalization
 
 import shutil, os, time, argparse
 
@@ -9,7 +11,7 @@ import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
 
-from ITrackerData import TabletGazePostprocessData
+from ITrackerData import TabletGazePostprocessData, MPIIGazeData
 from ITrackerModel import ITrackerModel
 
 '''
@@ -43,7 +45,7 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 parser = argparse.ArgumentParser(description='iTracker-pytorch-Trainer.')
-parser.add_argument('--data_path', default="TabletGazeDataset", help="Path to processed dataset. It should contain metadata.mat. Use prepareDataset.py.")
+parser.add_argument('--data_path', default="MPIIGaze/MPIIFaceGaze.h5", help="Path to processed dataset. It should contain metadata.mat. Use prepareDataset.py.")
 parser.add_argument('--sink', type=str2bool, nargs='?', const=True, default=False, help="Just sink and terminate.")
 parser.add_argument('--reset', type=str2bool, nargs='?', const=True, default=False, help="Start from scratch (do not load).")
 args = parser.parse_args()
@@ -56,7 +58,7 @@ device = 'cuda'
 cpu_workers = 2
 cuda_workers = 20
 epochs = 25
-batch_size = 64 if device == 'cpu' else torch.cuda.device_count() * 100
+batch_size = 64 if device == 'cpu' else torch.cuda.device_count() * 50
 
 base_lr = 0.0001
 momentum = 0.9
@@ -77,7 +79,8 @@ def main():
     model = torch.nn.DataParallel(model)
     model.to(torch.device(device))
     imSize=(224,224)
-    cudnn.benchmark = True   
+    cudnn.benchmark = True
+    cudnn.deterministic = False   
 
     epoch = 0
     if doLoad:
@@ -94,8 +97,8 @@ def main():
         else:
             print('Warning: Could not read checkpoint!')
 
-    dataTrain = TabletGazePostprocessData(dataPath = args.data_path, split='train', imSize = imSize)
-    dataVal = TabletGazePostprocessData(dataPath = args.data_path, split='test', imSize = imSize)
+    dataTrain = MPIIGazeData(dataPath = args.data_path, split='train', imSize = imSize)
+    dataVal = MPIIGazeData(dataPath = args.data_path, split='test', imSize = imSize)
    
     train_loader = torch.utils.data.DataLoader(
         dataTrain,
@@ -150,22 +153,18 @@ def train(train_loader, model, criterion,optimizer, epoch):
     model.train()
 
     end = time.time()
+    dev = torch.device(device)
+    print(dev)
 
     for i, (imFace, imEyeL, imEyeR, faceGrid, gaze) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        imFace = imFace.to(device=device)
-        imEyeL = imEyeL.to(device=device)
-        imEyeR = imEyeR.to(device=device)
-        faceGrid = faceGrid.to(device=device)
-        gaze = gaze.to(device=device)
-
-        imFace = torch.autograd.Variable(imFace, requires_grad=True)
-        imEyeL = torch.autograd.Variable(imEyeL, requires_grad=True)
-        imEyeR = torch.autograd.Variable(imEyeR, requires_grad=True)
-        faceGrid = torch.autograd.Variable(faceGrid, requires_grad=True)
-        gaze = torch.autograd.Variable(gaze, requires_grad=False)
+        imFace = imFace.to(dev)
+        imEyeL = imEyeL.to(dev)
+        imEyeR = imEyeR.to(dev)
+        faceGrid = faceGrid.to(dev)
+        gaze = gaze.to(dev)
 
         # compute output
         output = model(imFace, imEyeL, imEyeR, faceGrid)
@@ -211,12 +210,6 @@ def validate(val_loader, model, criterion, epoch):
         imEyeR = imEyeR.to(device=device)
         faceGrid = faceGrid.to(device=device)
         gaze = gaze.to(device=device)
-
-        imFace = torch.autograd.Variable(imFace, requires_grad=False)
-        imEyeL = torch.autograd.Variable(imEyeL, requires_grad=False)
-        imEyeR = torch.autograd.Variable(imEyeR, requires_grad=False)
-        faceGrid = torch.autograd.Variable(faceGrid, requires_grad=False)
-        gaze = torch.autograd.Variable(gaze, requires_grad=False)
 
         # compute output
         with torch.no_grad():
