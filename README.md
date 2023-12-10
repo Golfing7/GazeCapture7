@@ -1,3 +1,7 @@
+# CS 460 Group 7 GazeCapture project
+
+To run the code for the project, look at the [MPIIGaze notebook](mpiigaze.ipynb) and the [TabletGaze notebook](tabletgaze.ipynb). These files will guide you through reproducing the results.
+
 # Eye Tracking for Everyone Code, Dataset and Models
 
 ## Introduction

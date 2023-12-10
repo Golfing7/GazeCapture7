@@ -1,6 +1,0 @@
---2023-12-01 11:15:43--  https://dl.boxcloud.com/zip_download/zip_download?ProgressReportingKey=D2B4108BB9FA6AAC231A308EB60AD364
-Resolving dl.boxcloud.com (dl.boxcloud.com)... 74.112.186.128
-Connecting to dl.boxcloud.com (dl.boxcloud.com)|74.112.186.128|:443... connected.
-HTTP request sent, awaiting response... 400 Bad Request
-2023-12-01 11:15:44 ERROR 400: Bad Request.
-
