@@ -56,7 +56,7 @@ doTest = args.sink # Only run test, no training
 
 device = 'cuda'
 cpu_workers = 2
-cuda_workers = 20
+cuda_workers = 0
 epochs = 25
 batch_size = 64 if device == 'cpu' else torch.cuda.device_count() * 50
 
@@ -154,7 +154,6 @@ def train(train_loader, model, criterion,optimizer, epoch):
 
     end = time.time()
     dev = torch.device(device)
-    print(dev)
 
     for i, (imFace, imEyeL, imEyeR, faceGrid, gaze) in enumerate(train_loader):
         # measure data loading time

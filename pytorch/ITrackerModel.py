@@ -1,20 +1,8 @@
-import argparse
-import os
-import shutil
-import time, math
-from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.parallel
-import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-import torchvision.models as models
-import numpy as np
-import torch.utils.model_zoo as model_zoo
-from torch.autograd.variable import Variable
 
 '''
 Pytorch model for the iTracker.

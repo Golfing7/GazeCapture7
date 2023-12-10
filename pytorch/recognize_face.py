@@ -1,7 +1,4 @@
-import cv2
-import numpy as np
 import mediapipe as mp
-import time
 import math
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -9,14 +6,6 @@ from extractFrames import get_face_grid, get_frames
 from threading import local
 
 detector_storage = local()
-# base_options = python.BaseOptions(model_asset_path='detector.tflite')
-# options = vision.FaceDetectorOptions(base_options=base_options)
-# detector_storage.__dict__.setdefault('detector', vision.FaceDetector.create_from_options(options))
-
-
-# base_options = python.BaseOptions(model_asset_path='detector.tflite')
-# options = vision.FaceDetectorOptions(base_options=base_options)
-# detector = vision.FaceDetector.create_from_options(options)
 
 def detect_features(np_img):
     if not hasattr(detector_storage, "detector"):
